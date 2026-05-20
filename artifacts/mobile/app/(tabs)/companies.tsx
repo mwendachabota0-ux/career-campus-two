@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,10 +19,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@tanstack/react-query';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
 import { aiService } from '@/lib/aiService';
 import { buildDocumentsContext } from '@/utils/docContext';
+
+const COMPANIES_RESULTS_KEY = 'cc_companies_results';
 
 interface CompanyResult {
   name: string;
@@ -66,7 +70,21 @@ export default function CompaniesScreen() {
   const [trackedNames, setTrackedNames] = useState<Set<string>>(new Set());
   const [locationText, setLocationText] = useState(profile?.city || '');
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [searchedLocation, setSearchedLocation] = useState('');
   const locationInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(COMPANIES_RESULTS_KEY).then(raw => {
+      if (!raw) return;
+      try {
+        const { results: saved, location } = JSON.parse(raw) as { results: CompanyResult[]; location: string };
+        if (saved?.length) {
+          setResults(saved);
+          setSearchedLocation(location || '');
+        }
+      } catch {}
+    }).catch(() => {});
+  }, []);
 
   const topPad = Platform.OS === 'web' ? 16 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 72 : insets.bottom + 56;
@@ -96,8 +114,6 @@ export default function CompaniesScreen() {
     }
   };
 
-  const [searchedLocation, setSearchedLocation] = useState('');
-
   const discoverMutation = useMutation({
     mutationFn: async () => {
       if (!profile?.currentDegree) throw new Error('no-degree');
@@ -116,8 +132,10 @@ export default function CompaniesScreen() {
           documentsContext: buildDocumentsContext(docs),
         }) as Promise<CompanyResult[]>;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, _vars) => {
       setResults(data);
+      const loc = locationText.trim();
+      AsyncStorage.setItem(COMPANIES_RESULTS_KEY, JSON.stringify({ results: data, location: loc })).catch(() => {});
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (err: Error) => {

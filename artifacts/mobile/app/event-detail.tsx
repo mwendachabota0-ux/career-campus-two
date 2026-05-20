@@ -181,6 +181,8 @@ export default function EventDetailScreen() {
           eventContext,
         },
         cvContent: buildUserContext(profile, docs),
+        brief: true,
+        conversational: true,
       });
       const aiMsg: ChatMessage = {
         role: 'assistant',

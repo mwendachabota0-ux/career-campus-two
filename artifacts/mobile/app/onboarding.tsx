@@ -779,11 +779,25 @@ export default function OnboardingScreen() {
       portfolioUrl: profile.portfolioUrl || '',
       profileFields: profile.profileFields ?? [],
     };
+    // Derive name from profileFields if displayName is still default
+    const nameFromFields = (() => {
+      const fields = profile.profileFields ?? [];
+      const match = fields.find(f =>
+        ['full name', 'name', 'first name'].some(kw => f.label.toLowerCase().includes(kw))
+      );
+      return match?.value?.trim() ?? '';
+    })();
+
     try {
       const data = await aiService.profileChat({
         messages: [],
-        existingProfile,
+        existingProfile: {
+          ...existingProfile,
+          displayName: existingProfile.displayName || nameFromFields,
+        },
         cvContent: getCvContent(docs),
+        brief: true,
+        conversational: true,
       });
       const firstMsg: ChatMessage = {
         role: 'assistant',
@@ -917,6 +931,8 @@ export default function OnboardingScreen() {
         messages: updatedMessages,
         existingProfile,
         cvContent: getCvContent(docs),
+        brief: true,
+        conversational: true,
       });
 
       const aiMsg: ChatMessage = {

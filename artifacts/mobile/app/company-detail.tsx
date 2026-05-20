@@ -20,10 +20,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { useApp } from '@/context/AppContext';
 import { aiService } from '@/lib/aiService';
 import { useColors } from '@/hooks/useColors';
 import { cleanAiResponse, cleanJsonResponse } from '@/utils/cleanAiResponse';
+
+function companyKey(name: string, suffix: string) {
+  return `cc_co_${name.toLowerCase().replace(/\s+/g, '_')}_${suffix}`;
+}
 
 interface CompanyData {
   name: string;
@@ -69,6 +75,17 @@ export default function CompanyDetailScreen() {
   const [researchLoading, setResearchLoading] = useState(false);
   const [interviewQ, setInterviewQ] = useState<{ personal: string[]; company: string[]; experience: string[] } | null>(null);
   const [interviewLoading, setInterviewLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (!company) return;
+    Promise.all([
+      AsyncStorage.getItem(companyKey(company.name, 'research')),
+      AsyncStorage.getItem(companyKey(company.name, 'interview')),
+    ]).then(([r, iq]) => {
+      if (r) setResearch(r);
+      if (iq) { try { setInterviewQ(JSON.parse(iq)); } catch {} }
+    }).catch(() => {});
+  }, [company?.name]);
 
   const [letterOpType, setLetterOpType] = useState<LetterOpType>('attachment');
   const [letterRole, setLetterRole] = useState('');
@@ -135,6 +152,7 @@ export default function CompanyDetailScreen() {
         });
       const summary = cleanAiResponse(data.summary || '');
       setResearch(summary);
+      AsyncStorage.setItem(companyKey(company.name, 'research'), summary).catch(() => {});
       if (trackedApp) {
         await updateApplication(trackedApp.id, { researchSummary: summary });
       }
@@ -158,6 +176,7 @@ export default function CompanyDetailScreen() {
         });
       const cleanedQuestions = cleanJsonResponse(data);
       setInterviewQ(cleanedQuestions);
+      AsyncStorage.setItem(companyKey(company.name, 'interview'), JSON.stringify(cleanedQuestions)).catch(() => {});
     } catch {
       Alert.alert('Interview prep failed', 'Could not generate questions. Check your connection.');
     } finally {
