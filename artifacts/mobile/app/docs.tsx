@@ -51,7 +51,25 @@ const CATEGORY_COLORS: Record<DocCategory, { bg: string; icon: string; border: s
   'Other': { bg: 'rgba(255,255,255,0.08)', icon: 'rgba(255,255,255,0.6)', border: 'rgba(255,255,255,0.15)' },
 };
 
-const DOCS_DIR = Platform.OS !== 'web' ? `${FileSystem.Paths.document.uri}career-compass-docs/` : null;
+const DOCS_DIR = Platform.OS !== 'web' ? `${FileSystem.Paths.document.uri}career-campus-docs/` : null;
+
+async function readAsBase64(uri: string): Promise<string> {
+  if (Platform.OS !== 'web') {
+    return FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  }
+  // On web, asset.uri is a blob/data URL — use FileReader to convert
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -140,64 +158,64 @@ export default function DocsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Saved!', `"${asset.name}" added to your document library.`);
 
-      if (DOCS_DIR) {
-        FileSystem.readAsStringAsync(localUri, { encoding: 'base64' })
-          .then(async base64 => {
-            return aiService.extractContent({
-              fileContent: base64,
-              contentType: asset.mimeType ?? 'application/octet-stream',
-              category,
-            }).catch(() => null);
-          })
-          .then(async data => {
-            if (!data?.extractedText) return;
-            await updateDoc(stored.id, { extractedText: data.extractedText });
+      // Extract text from the document (works on both native and web)
+      const sourceUri = DOCS_DIR ? localUri : asset.uri;
+      readAsBase64(sourceUri)
+        .then(async base64 => {
+          return aiService.extractContent({
+            fileContent: base64,
+            contentType: asset.mimeType ?? 'application/octet-stream',
+            category,
+          }).catch(() => null);
+        })
+        .then(async data => {
+          if (!data?.extractedText) return;
+          await updateDoc(stored.id, { extractedText: data.extractedText });
 
-            if (category === 'CV / Resume' && profile) {
-              try {
-                const parsed = await aiService.parseProfileFromCv({ cvContent: data.extractedText });
+          if (category === 'CV / Resume' && profile) {
+            try {
+              const parsed = await aiService.parseProfileFromCv({ cvContent: data.extractedText });
 
-                const mergedFields = [...(profile.profileFields ?? [])];
-                const existingLabels = new Set(mergedFields.map(f => f.label.toLowerCase()));
-                for (const pf of (parsed.profileFields ?? [])) {
-                  if (pf.label?.trim() && pf.value?.trim() && !existingLabels.has(pf.label.toLowerCase())) {
-                    mergedFields.push({ id: `cv_${Date.now()}_${mergedFields.length}`, label: pf.label.trim(), value: pf.value.trim() });
-                  }
+              const mergedFields = [...(profile.profileFields ?? [])];
+              const existingLabels = new Set(mergedFields.map(f => f.label.toLowerCase()));
+              for (const pf of ((parsed.profileFields as Array<{ label: string; value: string }>) ?? [])) {
+                if (pf.label?.trim() && pf.value?.trim() && !existingLabels.has(pf.label.toLowerCase())) {
+                  mergedFields.push({ id: `cv_${Date.now()}_${mergedFields.length}`, label: pf.label.trim(), value: pf.value.trim() });
                 }
+              }
 
-                await updateProfile({
-                  ...profile,
-                  displayName: parsed.displayName || profile.displayName,
-                  currentDegree: parsed.currentDegree || profile.currentDegree,
-                  institution: parsed.institution || profile.institution,
-                  yearOfStudy: parsed.yearOfStudy || profile.yearOfStudy,
-                  skills: parsed.skills || profile.skills,
-                  city: parsed.city || profile.city,
-                  preferredIndustries: parsed.preferredIndustries || profile.preferredIndustries,
-                  careerGoals: parsed.careerGoals || profile.careerGoals,
-                  portfolioUrl: parsed.portfolioUrl || profile.portfolioUrl,
-                  profileFields: mergedFields,
-                });
+              await updateProfile({
+                ...profile,
+                displayName: (parsed.displayName as string) || profile.displayName,
+                currentDegree: (parsed.currentDegree as string) || profile.currentDegree,
+                institution: (parsed.institution as string) || profile.institution,
+                yearOfStudy: (parsed.yearOfStudy as string) || profile.yearOfStudy,
+                skills: (parsed.skills as string) || profile.skills,
+                city: (parsed.city as string) || profile.city,
+                preferredIndustries: (parsed.preferredIndustries as string) || profile.preferredIndustries,
+                careerGoals: (parsed.careerGoals as string) || profile.careerGoals,
+                portfolioUrl: (parsed.portfolioUrl as string) || profile.portfolioUrl,
+                profileFields: mergedFields,
+              });
 
-                const filled = [
-                  parsed.displayName && 'Name',
-                  parsed.currentDegree && 'Degree',
-                  parsed.institution && 'Institution',
-                  parsed.skills && 'Skills',
-                  parsed.city && 'City',
-                  parsed.careerGoals && 'Career goals',
-                ].filter(Boolean);
-                if (filled.length > 0) {
-                  Alert.alert(
-                    'Profile auto-filled from CV',
-                    `Your profile was updated with: ${filled.join(', ')}.`,
-                  );
-                }
-              } catch {}
-            }
-          })
-          .catch(() => {});
-      }
+              const filled = [
+                parsed.displayName && 'Name',
+                parsed.currentDegree && 'Degree',
+                parsed.institution && 'Institution',
+                parsed.skills && 'Skills',
+                parsed.city && 'City',
+                parsed.careerGoals && 'Career goals',
+              ].filter(Boolean);
+              if (filled.length > 0) {
+                Alert.alert(
+                  'Profile auto-filled from CV',
+                  `Your profile was updated with: ${filled.join(', ')}.`,
+                );
+              }
+            } catch {}
+          }
+        })
+        .catch(() => {});
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message ?? 'Something went wrong. Please try again.');
     } finally {

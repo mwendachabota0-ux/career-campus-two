@@ -671,6 +671,67 @@ const floatStyles = StyleSheet.create({
   badgeText: { fontSize: 12, fontFamily: 'Inter_700Bold' },
 });
 
+// ─── Profile field merger ─────────────────────────────────────────────────────
+// The Edge Function often returns direct fields (displayName, currentDegree…)
+// rather than a profileFields array.  This converts both into a unified
+// profileFields list so the FloatingProfilePanel can display them.
+
+const DIRECT_FIELD_MAP: Array<{ key: keyof ProfileSnapshot; label: string }> = [
+  { key: 'displayName',        label: 'Full Name' },
+  { key: 'currentDegree',      label: 'Degree' },
+  { key: 'institution',        label: 'Institution' },
+  { key: 'yearOfStudy',        label: 'Year of Study' },
+  { key: 'skills',             label: 'Skills' },
+  { key: 'city',               label: 'City' },
+  { key: 'preferredIndustries',label: 'Preferred Industries' },
+  { key: 'careerGoals',        label: 'Career Goals' },
+  { key: 'portfolioUrl',       label: 'Portfolio / GitHub' },
+];
+
+function mergePartialProfile(
+  incoming: Record<string, unknown>,
+  existing: ProfileSnapshot,
+): ProfileSnapshot {
+  const pp = incoming as ProfileSnapshot;
+
+  // Convert any populated direct fields into label/value rows
+  const fromDirect = DIRECT_FIELD_MAP
+    .filter(({ key }) => {
+      const v = pp[key];
+      return typeof v === 'string' && v.trim() !== '' && v !== 'You';
+    })
+    .map(({ key, label }) => ({ label, value: (pp[key] as string).trim() }));
+
+  // Start from what the AI explicitly returned in profileFields
+  const base: Array<{ label: string; value: string }> = Array.isArray(pp.profileFields)
+    ? (pp.profileFields as Array<{ label: string; value: string }>)
+    : [];
+
+  // Keep existing snapshot fields so we never lose data between replies
+  const prev = existing.profileFields ?? [];
+
+  // Merge: base > fromDirect > prev (later entries only fill gaps)
+  const merged: Array<{ label: string; value: string }> = [...base];
+  for (const fd of [...fromDirect, ...prev]) {
+    if (!merged.some(f => f.label.toLowerCase() === fd.label.toLowerCase())) {
+      merged.push(fd);
+    }
+  }
+
+  return {
+    displayName:          pp.displayName        || existing.displayName,
+    currentDegree:        pp.currentDegree      || existing.currentDegree,
+    institution:          pp.institution        || existing.institution,
+    yearOfStudy:          pp.yearOfStudy        || existing.yearOfStudy,
+    skills:               pp.skills             || existing.skills,
+    city:                 pp.city               || existing.city,
+    preferredIndustries:  pp.preferredIndustries|| existing.preferredIndustries,
+    careerGoals:          pp.careerGoals        || existing.careerGoals,
+    portfolioUrl:         pp.portfolioUrl       || existing.portfolioUrl,
+    profileFields:        merged,
+  };
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function OnboardingScreen() {
@@ -806,7 +867,8 @@ export default function OnboardingScreen() {
         ),
       };
       setMessages([firstMsg]);
-      if (data.partialProfile) setSnapshot(data.partialProfile as ProfileSnapshot);
+      if (data.partialProfile)
+        setSnapshot(prev => mergePartialProfile(data.partialProfile!, prev));
     } catch (err: any) {
       // On failure show a friendly fallback message instead of crashing
       const errMsg: string = err?.message ?? 'Connection error';
@@ -945,8 +1007,42 @@ export default function OnboardingScreen() {
       setMessages(fullHistory);
       AsyncStorage.setItem(CHAT_KEY, JSON.stringify(fullHistory)).catch(() => {});
 
-      if (data.partialProfile)
-        setSnapshot(data.partialProfile as ProfileSnapshot);
+      if (data.partialProfile) {
+        setSnapshot(prev => {
+          const merged = mergePartialProfile(data.partialProfile!, prev);
+          // Immediately persist partial data so the profile tab stays in sync
+          if (profile && merged.profileFields && merged.profileFields.length > 0) {
+            const existingFieldsById = new Map(
+              (profile.profileFields ?? []).map(f => [f.label.toLowerCase(), f.id])
+            );
+            const profileFields = merged.profileFields
+              .filter(f => f.label?.trim() && f.value?.trim())
+              .map((f, i) => ({
+                id: existingFieldsById.get(f.label.toLowerCase()) ?? `ai_${Date.now()}_${i}`,
+                label: f.label.trim(),
+                value: f.value.trim(),
+              }));
+            updateProfile({
+              ...profile,
+              displayName:
+                merged.displayName && merged.displayName !== 'You'
+                  ? merged.displayName
+                  : profile.displayName,
+              currentDegree:       merged.currentDegree       || profile.currentDegree,
+              institution:         merged.institution         || profile.institution,
+              yearOfStudy:         merged.yearOfStudy         || profile.yearOfStudy,
+              skills:              merged.skills              || profile.skills,
+              city:                merged.city                || profile.city,
+              preferredIndustries: merged.preferredIndustries || profile.preferredIndustries,
+              careerGoals:         merged.careerGoals         || profile.careerGoals,
+              portfolioUrl:        merged.portfolioUrl        || profile.portfolioUrl,
+              profileFields:
+                profileFields.length > 0 ? profileFields : (profile.profileFields ?? []),
+            }).catch(() => {});
+          }
+          return merged;
+        });
+      }
 
       if (data.isComplete && data.profileData) {
         setIsDone(true);
