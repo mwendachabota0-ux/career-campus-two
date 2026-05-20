@@ -213,15 +213,6 @@ importers:
         specifier: 3.1.0
         version: 3.1.0
 
-  artifacts/career-campus:
-    devDependencies:
-      prettier:
-        specifier: ^3.8.3
-        version: 3.8.3
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
   artifacts/mobile:
     dependencies:
       '@supabase/supabase-js':
