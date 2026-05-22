@@ -6,10 +6,11 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -21,13 +22,26 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+// Set this key the very first time onboarding is launched so it never
+// auto-opens again on subsequent app starts.
+const ONBOARDING_SEEN_KEY = 'cc_onboarding_seen';
+
 function AuthRedirect() {
   const { isLoaded, isAuthenticated, profile } = useApp();
   const router = useRouter();
   const wasAuthenticated = useRef(false);
+  const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
+
+  // Read the flag once on mount
+  useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_SEEN_KEY)
+      .then(val => setOnboardingSeen(val === 'true'))
+      .catch(() => setOnboardingSeen(false));
+  }, []);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    // Wait until both auth and the storage flag are resolved
+    if (!isLoaded || onboardingSeen === null) return;
 
     if (!isAuthenticated) {
       wasAuthenticated.current = false;
@@ -39,12 +53,17 @@ function AuthRedirect() {
     if (wasAuthenticated.current) return;
     wasAuthenticated.current = true;
 
-    if (profile && profile.displayName === 'You' && !profile.currentDegree) {
+    // Only send to onboarding on the very first launch (flag not yet set)
+    // and only when the profile is still completely blank.
+    const isBlankProfile = profile && profile.displayName === 'You' && !profile.currentDegree;
+    if (!onboardingSeen && isBlankProfile) {
+      // Mark it so it never auto-opens again
+      AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true').catch(() => {});
       router.replace('/onboarding');
     } else {
       router.replace('/(tabs)');
     }
-  }, [isLoaded, isAuthenticated, profile]);
+  }, [isLoaded, isAuthenticated, profile, onboardingSeen]);
 
   return null;
 }
@@ -65,7 +84,7 @@ function RootLayoutNav() {
         />
         <Stack.Screen
           name="onboarding"
-          options={{ headerShown: false, animation: 'fade', gestureEnabled: false }}
+          options={{ headerShown: false, animation: 'slide_from_bottom' }}
         />
         <Stack.Screen name="docs" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="doc-viewer" options={{ headerShown: false, animation: 'slide_from_right' }} />
