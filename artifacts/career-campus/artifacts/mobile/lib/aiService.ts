@@ -140,13 +140,23 @@ async function invokeAI<T = unknown>(
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export const aiService = {
-  profileChat: (payload: Record<string, unknown>) =>
-    invokeAI<{
+  profileChat: (payload: Record<string, unknown>) => {
+    const messages = (payload.messages as Array<{ role: string; content: string }> | undefined) ?? [];
+    const message =
+      (payload.message as string | undefined) ??
+      [...messages].reverse().find((m) => m.role === 'user')?.content ??
+      messages[messages.length - 1]?.content;
+
+    return invokeAI<{
       reply: string;
       isComplete: boolean;
       profileData?: Record<string, unknown>;
       partialProfile?: Record<string, unknown>;
-    }>('profile-chat', payload),
+    }>('profile-chat', {
+      ...payload,
+      ...(message ? { message } : {}),
+    });
+  },
 
   discoverCompanies: (payload: Record<string, unknown>) =>
     invokeAI<unknown[]>('discover-companies', payload),
