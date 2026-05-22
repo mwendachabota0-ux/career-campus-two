@@ -28,6 +28,14 @@ import { buildDocumentsContext } from '@/utils/docContext';
 
 const COMPANIES_RESULTS_KEY = 'cc_companies_results';
 
+function timeAgo(ms: number): string {
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} hr ago`;
+  return `${Math.floor(s / 86400)} day${Math.floor(s / 86400) === 1 ? '' : 's'} ago`;
+}
+
 interface CompanyResult {
   name: string;
   description: string;
@@ -71,16 +79,20 @@ export default function CompaniesScreen() {
   const [locationText, setLocationText] = useState(profile?.city || '');
   const [gpsLoading, setGpsLoading] = useState(false);
   const [searchedLocation, setSearchedLocation] = useState('');
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const locationInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(COMPANIES_RESULTS_KEY).then(raw => {
       if (!raw) return;
       try {
-        const { results: saved, location } = JSON.parse(raw) as { results: CompanyResult[]; location: string };
-        if (saved?.length) {
-          setResults(saved);
-          setSearchedLocation(location || '');
+        const saved = JSON.parse(raw) as { results: CompanyResult[]; location: string; fetchedAt?: number };
+        if (saved.results?.length) {
+          setResults(saved.results);
+          setSearchedLocation(saved.location || '');
+          setFetchedAt(saved.fetchedAt ?? null);
+          // Pre-fill the location input with the last searched location
+          if (saved.location) setLocationText(saved.location);
         }
       } catch {}
     }).catch(() => {});
@@ -132,10 +144,15 @@ export default function CompaniesScreen() {
           documentsContext: buildDocumentsContext(docs),
         }) as Promise<CompanyResult[]>;
     },
-    onSuccess: (data, _vars) => {
-      setResults(data);
+    onSuccess: (data) => {
       const loc = locationText.trim();
-      AsyncStorage.setItem(COMPANIES_RESULTS_KEY, JSON.stringify({ results: data, location: loc })).catch(() => {});
+      const now = Date.now();
+      setResults(data);
+      setFetchedAt(now);
+      AsyncStorage.setItem(
+        COMPANIES_RESULTS_KEY,
+        JSON.stringify({ results: data, location: loc, fetchedAt: now }),
+      ).catch(() => {});
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (err: Error) => {
@@ -147,10 +164,28 @@ export default function CompaniesScreen() {
       } else if (err.name === 'AbortError') {
         Alert.alert('Taking too long', 'The search timed out. Try again — AI searches can take up to 30 seconds.');
       } else {
-        Alert.alert('Search failed', 'Check your internet connection and try again.');
+        Alert.alert('Search failed', err.message || 'Check your internet connection and try again.');
       }
     },
   });
+
+  // Smart scan: if results already exist for the same location, confirm before re-fetching
+  const handleScan = () => {
+    const loc = locationText.trim();
+    const sameLocation = loc.toLowerCase() === searchedLocation.toLowerCase();
+    if (results.length > 0 && sameLocation && fetchedAt) {
+      Alert.alert(
+        'Results already saved',
+        `You already have ${results.length} organisations found in ${searchedLocation} (${timeAgo(fetchedAt)}). Search again to get fresh results?`,
+        [
+          { text: 'Keep current', style: 'cancel' },
+          { text: 'Search again', onPress: () => discoverMutation.mutate() },
+        ],
+      );
+    } else {
+      discoverMutation.mutate();
+    }
+  };
 
   const handleTrack = async (company: CompanyResult) => {
     if (alreadyTracked(company.name)) return;
@@ -252,10 +287,27 @@ export default function CompaniesScreen() {
         ) : null}
       </View>
 
+      {/* Cache banner — shown when results exist */}
+      {results.length > 0 && searchedLocation && fetchedAt && !discoverMutation.isPending && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          marginBottom: 12, paddingHorizontal: 12, paddingVertical: 8,
+          backgroundColor: colors.indigoBg,
+          borderRadius: 10, borderWidth: 1, borderColor: colors.indigoBorder,
+        }}>
+          <Feather name="check-circle" size={13} color={colors.primary} />
+          <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.textMuted, flex: 1 }}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', color: colors.text }}>{results.length} organisations</Text>
+            {' '}saved for <Text style={{ fontFamily: 'Inter_600SemiBold', color: colors.text }}>{searchedLocation}</Text>
+            {' '}· {timeAgo(fetchedAt)}
+          </Text>
+        </View>
+      )}
+
       {/* Scan Button */}
       <Pressable
         style={({ pressed }) => [s.scanBtn, pressed && { opacity: 0.9 }]}
-        onPress={() => discoverMutation.mutate()}
+        onPress={handleScan}
         disabled={discoverMutation.isPending}
         accessibilityRole="button"
         accessibilityLabel={results.length > 0 ? 'Scan again' : 'Start scanning for WIL placements'}

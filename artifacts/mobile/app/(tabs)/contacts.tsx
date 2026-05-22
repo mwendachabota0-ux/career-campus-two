@@ -129,8 +129,9 @@ const TYPE_META: Record<string, { color: string; bg: string; border: string; lab
 };
 
 const LAST_EVENTS_FETCH_KEY = 'cc_last_events_fetch';
-const EVENTS_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
-const ALL_EVENTS_KEY = 'cc_all_events';
+const EVENTS_OPENED_KEY    = 'cc_events_opened';   // "ceremony" flag — set on first manual visit
+const EVENTS_AUTO_TTL      = 60 * 60 * 1000;       // 1 hour — auto-refresh interval after ceremony
+const ALL_EVENTS_KEY       = 'cc_all_events';
 
 function isPastEvent(event: NetworkingEvent): boolean {
   if (!event.dateIso) return false;
@@ -209,22 +210,45 @@ export default function NetworkScreen() {
     }
   }, [profile?.city, profile?.currentDegree, profile?.preferredIndustries, profile?.careerGoals]);
 
+  const [ceremonyDone, setCeremonyDone] = useState(false);
+
   const didInit = useRef(false);
   useEffect(() => {
     if (Platform.OS !== 'web') requestNotificationPermissions().catch(() => {});
     if (didInit.current) return;
     didInit.current = true;
-    // Only load from cache — never auto-fetch AI on mount to avoid rate limits.
-    // User must press "Find Events" to trigger an AI call.
-    AsyncStorage.getItem(ALL_EVENTS_KEY)
-      .then(raw => {
-        if (raw) {
-          const stored = JSON.parse(raw) as NetworkingEvent[];
+
+    Promise.all([
+      AsyncStorage.getItem(ALL_EVENTS_KEY).catch(() => null),
+      AsyncStorage.getItem(EVENTS_OPENED_KEY).catch(() => null),
+      AsyncStorage.getItem(LAST_EVENTS_FETCH_KEY).catch(() => null),
+    ]).then(([rawEvents, opened, lastFetch]) => {
+      // Always show cached events immediately
+      if (rawEvents) {
+        try {
+          const stored = JSON.parse(rawEvents) as NetworkingEvent[];
           if (stored.length > 0) setAllEvents(stored);
+        } catch {}
+      }
+
+      if (opened) {
+        // Ceremony has been done before — auto-refresh if >1 hr stale
+        setCeremonyDone(true);
+        const lastTime = lastFetch ? parseInt(lastFetch, 10) : 0;
+        if (Date.now() - lastTime > EVENTS_AUTO_TTL) {
+          fetchEvents(); // silent background refresh
         }
-      })
-      .catch(() => {});
-  }, []);
+      }
+      // If ceremony not done: show "Find Events" button, wait for user
+    });
+  }, [fetchEvents]);
+
+  // Called when user deliberately opens the tab for the first time and taps Find Events
+  const handleFirstFind = useCallback(() => {
+    AsyncStorage.setItem(EVENTS_OPENED_KEY, '1').catch(() => {});
+    setCeremonyDone(true);
+    fetchEvents();
+  }, [fetchEvents]);
 
   // ── Filtered & sorted events ────────────────────────────────────────────────
 
@@ -556,10 +580,14 @@ export default function NetworkScreen() {
               {activeFilter !== 'all'
                 ? 'Try a different filter or tap the refresh icon to search.'
                 : profile?.city
-                  ? `Tap "Find Events" to discover opportunities near ${profile.city}.`
-                  : 'Add your city in your profile, then tap "Find Events" to get local results.'}
+                  ? `Tap below to discover opportunities near ${profile.city}.`
+                  : 'Add your city in your profile, then tap below to get local results.'}
             </Text>
-            <Pressable style={s.retryBtn} onPress={() => fetchEvents()} accessibilityRole="button">
+            <Pressable
+              style={s.retryBtn}
+              onPress={ceremonyDone ? () => fetchEvents() : handleFirstFind}
+              accessibilityRole="button"
+            >
               <Feather name="search" size={14} color="#fff" />
               <Text style={s.retryBtnText}>Find Events</Text>
             </Pressable>
