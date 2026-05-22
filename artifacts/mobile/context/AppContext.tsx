@@ -122,12 +122,35 @@ interface AppContextType {
 
 export const AppContext = createContext<AppContextType | null>(null);
 
-const PROFILE_KEY = 'cc_profile';
-const APPS_KEY = 'cc_applications';
-const CONTACTS_KEY = 'cc_contacts';
-const SAVED_EVENTS_KEY = 'cc_saved_events';
-const DOCS_KEY = 'cc_documents';
-const THEME_KEY = 'cc_theme';
+// ── Storage key helpers ────────────────────────────────────────────────────────
+// Keys are user-scoped so multiple users on the same device never share data.
+// Legacy (non-scoped) keys are read once for migration then abandoned.
+
+const THEME_KEY = 'cc_theme'; // theme is device-level, not user-level
+
+function storageKeys(uid: string) {
+  return {
+    profile:  `cc_profile_${uid}`,
+    apps:     `cc_applications_${uid}`,
+    contacts: `cc_contacts_${uid}`,
+    events:   `cc_saved_events_${uid}`,
+    docs:     `cc_documents_${uid}`,
+  };
+}
+
+// Legacy (pre-scoping) keys — used only for one-time migration
+const LEGACY_KEYS = {
+  profile:  'cc_profile',
+  apps:     'cc_applications',
+  contacts: 'cc_contacts',
+  events:   'cc_saved_events',
+  docs:     'cc_documents',
+};
+
+function safeParse<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
 
 export function genId() {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -142,22 +165,51 @@ async function loadLocalData(
   uid: string,
   displayName?: string,
 ) {
+  const keys = storageKeys(uid);
+
+  // Load from user-scoped keys
   const [rawProfile, rawApps, rawContacts, rawEvents, rawDocs] = await Promise.all([
-    AsyncStorage.getItem(PROFILE_KEY),
-    AsyncStorage.getItem(APPS_KEY),
-    AsyncStorage.getItem(CONTACTS_KEY),
-    AsyncStorage.getItem(SAVED_EVENTS_KEY),
-    AsyncStorage.getItem(DOCS_KEY),
+    AsyncStorage.getItem(keys.profile),
+    AsyncStorage.getItem(keys.apps),
+    AsyncStorage.getItem(keys.contacts),
+    AsyncStorage.getItem(keys.events),
+    AsyncStorage.getItem(keys.docs),
   ]);
-  let p: UserProfile = rawProfile
-    ? JSON.parse(rawProfile)
-    : { uid, displayName: displayName ?? 'You', currentDegree: '', careerGoals: '', weeklyGoal: 5 };
-  if (!rawProfile) await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+
+  // One-time migration: if scoped key is missing, pull from legacy global key
+  async function migrateIfNeeded(scopedRaw: string | null, legacyKey: string, scopedKey: string) {
+    if (scopedRaw !== null) return scopedRaw; // already scoped
+    const legacy = await AsyncStorage.getItem(legacyKey).catch(() => null);
+    if (legacy) {
+      await AsyncStorage.setItem(scopedKey, legacy).catch(() => {});
+    }
+    return legacy;
+  }
+
+  const [migratedProfile, migratedApps, migratedContacts, migratedEvents, migratedDocs] =
+    await Promise.all([
+      migrateIfNeeded(rawProfile,  LEGACY_KEYS.profile,  keys.profile),
+      migrateIfNeeded(rawApps,     LEGACY_KEYS.apps,     keys.apps),
+      migrateIfNeeded(rawContacts, LEGACY_KEYS.contacts, keys.contacts),
+      migrateIfNeeded(rawEvents,   LEGACY_KEYS.events,   keys.events),
+      migrateIfNeeded(rawDocs,     LEGACY_KEYS.docs,     keys.docs),
+    ]);
+
+  const defaultProfile: UserProfile = {
+    uid, displayName: displayName ?? 'You',
+    currentDegree: '', careerGoals: '', weeklyGoal: 5,
+  };
+
+  const p = safeParse<UserProfile>(migratedProfile, defaultProfile);
+  if (!migratedProfile) {
+    await AsyncStorage.setItem(keys.profile, JSON.stringify(p)).catch(() => {});
+  }
+
   setProfile(p);
-  setApplications(rawApps ? JSON.parse(rawApps) : []);
-  setContacts(rawContacts ? JSON.parse(rawContacts) : []);
-  setSavedEvents(rawEvents ? JSON.parse(rawEvents) : []);
-  setDocs(rawDocs ? JSON.parse(rawDocs) : []);
+  setApplications(safeParse<Application[]>(migratedApps, []));
+  setContacts(safeParse<Contact[]>(migratedContacts, []));
+  setSavedEvents(safeParse<SavedEvent[]>(migratedEvents, []));
+  setDocs(safeParse<StoredDocument[]>(migratedDocs, []));
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -175,7 +227,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (rawTheme === 'light' || rawTheme === 'dark' || rawTheme === 'system') {
         setThemeOverrideState(rawTheme);
       }
-    });
+    }).catch(() => {});
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       await rawThemeLoad;
@@ -188,9 +240,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(true);
       }
       setIsLoaded(true);
-    });
+    }).catch(() => setIsLoaded(true));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Sign the user out locally if their token can no longer be refreshed
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        await supabase.auth.signOut().catch(() => {});
+        return;
+      }
+
       if (session?.user) {
         const meta = session.user.user_metadata as { display_name?: string } | undefined;
         await loadLocalData(
@@ -212,41 +270,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) return { success: false, error: error.message };
-    return { success: true };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Connection error — check your internet and try again.' };
+    }
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { data: { display_name: displayName.trim() } },
-    });
-    if (error) return { success: false, error: error.message };
-    if (data.user && !data.session) {
-      return { success: false, error: 'Check your email to confirm your account, then sign in.' };
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { display_name: displayName.trim() } },
+      });
+      if (error) return { success: false, error: error.message };
+      // Email-confirmation required: data.user exists but data.session is null.
+      // Treat this as success — the signup screen will show "Check your inbox".
+      if (data.user) return { success: true };
+      return { success: false, error: 'Sign up failed — please try again.' };
+    } catch {
+      return { success: false, error: 'Connection error — check your internet and try again.' };
     }
-    return { success: true };
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // If sign-out fails remotely, clear local state anyway
+      setIsAuthenticated(false);
+      setProfile(null);
+      setApplications([]);
+      setContacts([]);
+      setSavedEvents([]);
+      setDocs([]);
+    }
   }, []);
+
+  // ── Scoped key helpers for mutations ────────────────────────────────────────
+
+  const getKeys = useCallback(() => {
+    return profile ? storageKeys(profile.uid) : storageKeys('anon');
+  }, [profile]);
 
   const saveApps = useCallback(async (apps: Application[]) => {
     setApplications(apps);
-    await AsyncStorage.setItem(APPS_KEY, JSON.stringify(apps));
-  }, []);
+    await AsyncStorage.setItem(getKeys().apps, JSON.stringify(apps)).catch(() => {});
+  }, [getKeys]);
 
   const saveContacts = useCallback(async (ctcts: Contact[]) => {
     setContacts(ctcts);
-    await AsyncStorage.setItem(CONTACTS_KEY, JSON.stringify(ctcts));
-  }, []);
+    await AsyncStorage.setItem(getKeys().contacts, JSON.stringify(ctcts)).catch(() => {});
+  }, [getKeys]);
 
   const updateProfile = useCallback(async (p: UserProfile) => {
     setProfile(p);
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+    await AsyncStorage.setItem(storageKeys(p.uid).profile, JSON.stringify(p)).catch(() => {});
   }, []);
 
   const addApplication = useCallback(async (data: Omit<Application, 'id' | 'lastModified'>) => {
@@ -254,111 +336,114 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const app: Application = { ...data, id: genId(), lastModified: now, createdDate: now };
     setApplications(prev => {
       const next = [app, ...prev];
-      AsyncStorage.setItem(APPS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().apps, JSON.stringify(next)).catch(() => {});
       return next;
     });
     return app;
-  }, []);
+  }, [getKeys]);
 
   const updateApplication = useCallback(async (id: string, updates: Partial<Application>) => {
     setApplications(prev => {
       const next = prev.map(a => a.id === id ? { ...a, ...updates, lastModified: new Date().toISOString() } : a);
-      AsyncStorage.setItem(APPS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().apps, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const deleteApplication = useCallback(async (id: string) => {
     setApplications(prev => {
       const next = prev.filter(a => a.id !== id);
-      AsyncStorage.setItem(APPS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().apps, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const addContact = useCallback(async (data: Omit<Contact, 'id' | 'addedDate'>) => {
     const contact: Contact = { ...data, id: genId(), addedDate: new Date().toISOString() };
     setContacts(prev => {
       const next = [contact, ...prev];
-      AsyncStorage.setItem(CONTACTS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().contacts, JSON.stringify(next)).catch(() => {});
       return next;
     });
     return contact;
-  }, []);
+  }, [getKeys]);
 
   const updateContact = useCallback(async (id: string, updates: Partial<Contact>) => {
     setContacts(prev => {
       const next = prev.map(c => c.id === id ? { ...c, ...updates } : c);
-      AsyncStorage.setItem(CONTACTS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().contacts, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const deleteContact = useCallback(async (id: string) => {
     setContacts(prev => {
       const next = prev.filter(c => c.id !== id);
-      AsyncStorage.setItem(CONTACTS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().contacts, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const saveEvent = useCallback(async (event: Omit<SavedEvent, 'savedAt'>) => {
     const saved: SavedEvent = { ...event, savedAt: new Date().toISOString() };
     setSavedEvents(prev => {
       if (prev.some(e => e.id === event.id)) return prev;
       const next = [saved, ...prev];
-      AsyncStorage.setItem(SAVED_EVENTS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().events, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const unsaveEvent = useCallback(async (id: string) => {
     setSavedEvents(prev => {
       const next = prev.filter(e => e.id !== id);
-      AsyncStorage.setItem(SAVED_EVENTS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().events, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const addDoc = useCallback(async (data: Omit<StoredDocument, 'id' | 'uploadedAt'>) => {
     const doc: StoredDocument = { ...data, id: genId(), uploadedAt: new Date().toISOString() };
     setDocs(prev => {
       const next = [doc, ...prev];
-      AsyncStorage.setItem(DOCS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().docs, JSON.stringify(next)).catch(() => {});
       return next;
     });
     return doc;
-  }, []);
+  }, [getKeys]);
 
   const updateDoc = useCallback(async (id: string, updates: Partial<StoredDocument>) => {
     setDocs(prev => {
       const next = prev.map(d => d.id === id ? { ...d, ...updates } : d);
-      AsyncStorage.setItem(DOCS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().docs, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const deleteDoc = useCallback(async (id: string) => {
     setDocs(prev => {
       const next = prev.filter(d => d.id !== id);
-      AsyncStorage.setItem(DOCS_KEY, JSON.stringify(next));
+      AsyncStorage.setItem(getKeys().docs, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [getKeys]);
 
   const setThemeOverride = useCallback(async (t: ThemeOverride) => {
     setThemeOverrideState(t);
-    await AsyncStorage.setItem(THEME_KEY, t);
+    await AsyncStorage.setItem(THEME_KEY, t).catch(() => {});
   }, []);
 
   const clearAllData = useCallback(async () => {
-    await AsyncStorage.multiRemove([PROFILE_KEY, APPS_KEY, CONTACTS_KEY, SAVED_EVENTS_KEY, DOCS_KEY]);
+    const keys = getKeys();
+    await AsyncStorage.multiRemove([
+      keys.profile, keys.apps, keys.contacts, keys.events, keys.docs,
+    ]).catch(() => {});
     setProfile(null);
     setApplications([]);
     setContacts([]);
     setSavedEvents([]);
     setDocs([]);
-  }, []);
+  }, [getKeys]);
 
   return (
     <AppContext.Provider value={{

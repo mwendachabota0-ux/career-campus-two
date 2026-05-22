@@ -317,10 +317,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-ZM', { day: 'numeric', month: 'short' });
 }
 
-function isThisWeek(isoDate: string) {
-  return (Date.now() - new Date(isoDate).getTime()) < 7 * 24 * 60 * 60 * 1000;
-}
-
 function getGreeting() {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning';

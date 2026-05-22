@@ -105,6 +105,10 @@ async function invokeAI<T = unknown>(
       } = await supabase.auth.getSession();
       const authToken = session?.access_token ?? SUPABASE_ANON_KEY;
 
+      // Abort the request if it hangs for more than 50 seconds
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 50_000);
+
       let res: Response;
       try {
         res = await fetch(EDGE_FUNCTION_URL, {
@@ -115,10 +119,16 @@ async function invokeAI<T = unknown>(
             apikey: SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({ action, ...(payload ?? {}) }),
+          signal: controller.signal,
         });
       } catch (networkErr) {
-        console.error(`[aiService] Network error calling ${action}:`, networkErr);
-        throw new Error('Network error — check your connection and try again.');
+        const isAbort = networkErr instanceof Error && networkErr.name === 'AbortError';
+        const msg = isAbort
+          ? 'Request timed out — the AI took too long to respond. Please try again.'
+          : 'Network error — check your connection and try again.';
+        throw new Error(msg);
+      } finally {
+        clearTimeout(timeoutId);
       }
 
       const text = await res.text();
