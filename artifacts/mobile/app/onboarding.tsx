@@ -822,11 +822,13 @@ export default function OnboardingScreen() {
     });
   }, [profile?.uid]);
 
-  // Fetch the opening AI message
-  const fetchInitialMessage = useCallback(async () => {
+  // Fetch the opening AI message.
+  // previousHistory — pass saved messages when resuming a cut-off conversation.
+  const fetchInitialMessage = useCallback(async (previousHistory?: ChatMessage[]) => {
     if (!profile) return;
     setIsLoadingFirst(true);
     setInitialError(null);
+
     const existingProfile = {
       displayName:
         profile.displayName !== 'You' ? profile.displayName : '',
@@ -840,6 +842,7 @@ export default function OnboardingScreen() {
       portfolioUrl: profile.portfolioUrl || '',
       profileFields: profile.profileFields ?? [],
     };
+
     // Derive name from profileFields if displayName is still default
     const nameFromFields = (() => {
       const fields = profile.profileFields ?? [];
@@ -849,42 +852,63 @@ export default function OnboardingScreen() {
       return match?.value?.trim() ?? '';
     })();
 
+    const resolvedProfile = {
+      ...existingProfile,
+      displayName: existingProfile.displayName || nameFromFields,
+    };
+
+    // When resuming, pass the saved history so the AI continues from where it left off.
+    // When starting fresh with profile data, pass an empty array — the existingProfile
+    // field gives the AI enough context to skip fields it already knows.
+    const messagesToSend = previousHistory ?? [];
+    const resuming = messagesToSend.length > 0;
+
     try {
       const data = await aiService.profileChat({
-        messages: [],
-        existingProfile: {
-          ...existingProfile,
-          displayName: existingProfile.displayName || nameFromFields,
-        },
+        messages: messagesToSend,
+        existingProfile: resolvedProfile,
         cvContent: getCvContent(docs),
         brief: true,
         conversational: true,
+        resuming,
       });
-      const firstMsg: ChatMessage = {
+
+      const aiMsg: ChatMessage = {
         role: 'assistant',
         content: cleanAiResponse(
-          data.reply || "Hi! I'm Career Compass AI. What's your name?",
+          data.reply || (resuming
+            ? "Welcome back! Let me know if you'd like to update anything."
+            : "Hi! I'm Career Compass AI. What's your name?"),
         ),
       };
-      setMessages([firstMsg]);
+
+      // Append to existing history (if resuming) or start fresh
+      const fullMessages = resuming
+        ? [...messagesToSend, aiMsg]
+        : [aiMsg];
+
+      setMessages(fullMessages);
+      AsyncStorage.setItem(CHAT_KEY, JSON.stringify(fullMessages)).catch(() => {});
+
       if (data.partialProfile)
         setSnapshot(prev => mergePartialProfile(data.partialProfile!, prev));
     } catch (err: any) {
-      // On failure show a friendly fallback message instead of crashing
       const errMsg: string = err?.message ?? 'Connection error';
       if (errMsg.includes('busy') || errMsg.includes('rate') || errMsg.includes('high demand')) {
-        setInitialError('The AI is a bit busy right now. Tap "Retry" to try again, or type your name below to start manually.');
+        setInitialError('The AI is a bit busy right now. Tap "Retry" to try again.');
       } else {
         setInitialError("Couldn't reach the AI. Check your connection and tap Retry.");
       }
-      // Provide a non-AI fallback greeting so the user can still proceed
-      setMessages([
-        {
+      // Keep existing messages if resuming; otherwise show fallback greeting
+      if (!resuming) {
+        const name = resolvedProfile.displayName;
+        setMessages([{
           role: 'assistant',
-          content:
-            "Hi! I'm Career Compass AI. Let's set up your profile — what's your full name?",
-        },
-      ]);
+          content: name
+            ? `Welcome back, ${name}! I'm Career Compass AI. What would you like to update?`
+            : "Hi! I'm Career Compass AI. Let's set up your profile — what's your full name?",
+        }]);
+      }
     } finally {
       setIsLoadingFirst(false);
     }
@@ -893,17 +917,26 @@ export default function OnboardingScreen() {
   useEffect(() => {
     if (!profile || firstMessageFetched.current) return;
     firstMessageFetched.current = true;
-    // Try to restore previous chat from storage before fetching a new greeting
+
     AsyncStorage.getItem(CHAT_KEY)
       .then(raw => {
         if (raw) {
           const saved = JSON.parse(raw) as ChatMessage[];
           if (saved.length > 0) {
+            // Always show the saved history immediately (no blank screen)
             setMessages(saved);
-            setIsLoadingFirst(false);
+            const lastMsg = saved[saved.length - 1];
+            if (lastMsg?.role === 'user') {
+              // Conversation was cut off mid-reply — resume from here
+              fetchInitialMessage(saved);
+            } else {
+              // History is complete — no API call needed, just show it
+              setIsLoadingFirst(false);
+            }
             return;
           }
         }
+        // No history — start fresh (AI will use existingProfile to skip known fields)
         fetchInitialMessage();
       })
       .catch(() => fetchInitialMessage());
