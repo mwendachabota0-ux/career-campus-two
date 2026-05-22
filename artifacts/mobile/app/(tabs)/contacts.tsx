@@ -129,7 +129,7 @@ const TYPE_META: Record<string, { color: string; bg: string; border: string; lab
 };
 
 const LAST_EVENTS_FETCH_KEY = 'cc_last_events_fetch';
-const EVENTS_CACHE_TTL = 3 * 60 * 60 * 1000; // 3 hours
+const EVENTS_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 const ALL_EVENTS_KEY = 'cc_all_events';
 
 function isPastEvent(event: NetworkingEvent): boolean {
@@ -209,12 +209,13 @@ export default function NetworkScreen() {
     }
   }, [profile?.city, profile?.currentDegree, profile?.preferredIndustries, profile?.careerGoals]);
 
-  const didAutoFetch = useRef(false);
+  const didInit = useRef(false);
   useEffect(() => {
     if (Platform.OS !== 'web') requestNotificationPermissions().catch(() => {});
-    if (didAutoFetch.current) return;
-    didAutoFetch.current = true;
-    // Load persisted events immediately so the list isn't empty on first open
+    if (didInit.current) return;
+    didInit.current = true;
+    // Only load from cache — never auto-fetch AI on mount to avoid rate limits.
+    // User must press "Find Events" to trigger an AI call.
     AsyncStorage.getItem(ALL_EVENTS_KEY)
       .then(raw => {
         if (raw) {
@@ -223,14 +224,7 @@ export default function NetworkScreen() {
         }
       })
       .catch(() => {});
-    // Refresh from AI if cache is stale
-    AsyncStorage.getItem(LAST_EVENTS_FETCH_KEY)
-      .then(stored => {
-        const lastTime = stored ? parseInt(stored, 10) : 0;
-        if (Date.now() - lastTime > EVENTS_CACHE_TTL) fetchEvents();
-      })
-      .catch(() => fetchEvents());
-  }, [fetchEvents]);
+  }, []);
 
   // ── Filtered & sorted events ────────────────────────────────────────────────
 
@@ -556,18 +550,18 @@ export default function NetworkScreen() {
               <Feather name="calendar" size={28} color={colors.primary} />
             </View>
             <Text style={s.emptyTitle}>
-              {activeFilter !== 'all' ? 'No events in this category' : 'No events found'}
+              {activeFilter !== 'all' ? 'No events in this category' : 'Find networking events'}
             </Text>
             <Text style={s.emptySubtitle}>
               {activeFilter !== 'all'
-                ? 'Try a different filter or pull down to refresh.'
+                ? 'Try a different filter or tap the refresh icon to search.'
                 : profile?.city
-                  ? `No upcoming events found for ${profile.city}. Pull down to search again.`
-                  : 'Add your city in your profile to get local results.'}
+                  ? `Tap "Find Events" to discover opportunities near ${profile.city}.`
+                  : 'Add your city in your profile, then tap "Find Events" to get local results.'}
             </Text>
             <Pressable style={s.retryBtn} onPress={() => fetchEvents()} accessibilityRole="button">
-              <Feather name="refresh-cw" size={14} color="#fff" />
-              <Text style={s.retryBtnText}>Search again</Text>
+              <Feather name="search" size={14} color="#fff" />
+              <Text style={s.retryBtnText}>Find Events</Text>
             </Pressable>
           </View>
         ) : (

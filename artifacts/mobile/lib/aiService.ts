@@ -31,13 +31,17 @@ function releaseSlot(): void {
 // ── Retry with exponential backoff ────────────────────────────────────────────
 // Retries automatically on transient 503/429 errors.
 
-const RETRY_DELAYS = [2000, 4000, 8000]; // ms between attempts
+// Only retry on transient server-busy errors (503/overload).
+// NEVER retry on 429 — it makes rate limiting worse.
+const RETRY_DELAYS = [5000, 15000]; // 5 s, then 15 s — only for 503s
 
 function isRetryable(msg: string): boolean {
+  // 429 is explicitly excluded: retrying only burns more quota
+  if (msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+    return false;
+  }
   return (
     msg.includes('503') ||
-    msg.includes('429') ||
-    msg.includes('rate') ||
     msg.includes('busy') ||
     msg.includes('UNAVAILABLE') ||
     msg.includes('high demand') ||
@@ -66,7 +70,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 // ── Friendly error parser ─────────────────────────────────────────────────────
 
 function parseErrorMessage(status: number, body: string): string {
-  if (status === 429) return 'AI rate limit reached — retrying automatically…';
+  if (status === 429) return 'AI is busy right now — please wait a moment and try again.';
   if (status === 503) return 'AI service is under high demand — retrying…';
   try {
     const data = JSON.parse(body) as { error?: string };
