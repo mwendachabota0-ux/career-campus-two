@@ -8,6 +8,7 @@ import React, { useRef } from 'react';
 import { Platform, StyleSheet, Text, useColorScheme, View, Dimensions } from 'react-native';
 import { PanGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
@@ -41,6 +42,7 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const isDark = colors.isDark;
   const isIOS = Platform.OS === 'ios';
   const { applications, contacts } = useApp();
@@ -89,8 +91,8 @@ function ClassicTabLayout() {
             shadowOffset: { width: 0, height: -3 },
             shadowOpacity: isDark ? 0.35 : 0.12,
             shadowRadius: 12,
-            height: Platform.OS === 'web' ? 72 : 62,
-            paddingBottom: Platform.OS === 'web' ? 8 : 8,
+            height: Platform.OS === 'web' ? 72 : 62 + insets.bottom,
+            paddingBottom: Platform.OS === 'web' ? 8 : insets.bottom + 8,
             paddingTop: 6,
           },
           tabBarBackground: () =>

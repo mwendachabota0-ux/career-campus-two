@@ -124,7 +124,7 @@ function LetterWriterModal({
           </View>
 
           <ScrollView
-            contentContainerStyle={lw.body}
+            contentContainerStyle={[lw.body, { paddingBottom: insets.bottom + 40 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >

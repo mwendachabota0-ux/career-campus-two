@@ -420,7 +420,7 @@ export default function CompanyDetailScreen() {
         onRequestClose={() => setShowLetterModal(false)}
       >
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={[s.modalContainer, { paddingTop: insets.top || 16 }]}>
+          <View style={[s.modalContainer, { paddingTop: insets.top || 16, paddingBottom: insets.bottom || 16 }]}>
             <View style={s.modalHeader}>
               <Pressable onPress={() => { setShowLetterModal(false); setLetter(''); setLetterError(''); }} style={s.closeBtn}>
                 <Feather name="x" size={20} color={colors.textMuted} />
@@ -429,7 +429,7 @@ export default function CompanyDetailScreen() {
               <View style={{ width: 36 }} />
             </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40 }} keyboardShouldPersistTaps="handled">
               <View style={s.companyChip}>
                 <Feather name="briefcase" size={13} color={colors.primary} />
                 <Text style={s.companyChipText} numberOfLines={1}>{company.name}</Text>
