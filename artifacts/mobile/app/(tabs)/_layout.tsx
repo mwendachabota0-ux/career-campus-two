@@ -5,9 +5,8 @@ import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
 import { SymbolView } from 'expo-symbols';
 import { Feather } from '@expo/vector-icons';
 import React, { useRef } from 'react';
-import { Platform, StyleSheet, Text, useColorScheme, View, Dimensions } from 'react-native';
-import { PanGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { Platform, StyleSheet } from 'react-native';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApp } from '@/context/AppContext';
@@ -74,8 +73,12 @@ function ClassicTabLayout() {
     }
   };
 
+  const pan = Gesture.Pan().onEnd((event) => {
+    handleSwipe(event);
+  });
+
   return (
-    <PanGestureHandler onGestureEvent={(e) => handleSwipe(e.nativeEvent)}>
+    <GestureDetector gesture={pan}>
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -179,11 +182,11 @@ function ClassicTabLayout() {
       {/* ── Hidden screens ── */}
       <Tabs.Screen name="prep" options={{ href: null }} />
     </Tabs>
-    </PanGestureHandler>
+    </GestureDetector>
   );
 }
 
-export default function TabLayout() {
+export default function TabLayout () {
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }
