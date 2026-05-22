@@ -104,6 +104,7 @@ async function invokeAI<T = unknown>(
         data: { session },
       } = await supabase.auth.getSession();
       const authToken = session?.access_token ?? SUPABASE_ANON_KEY;
+      const userId = session?.user?.id;
 
       // Abort the request if it hangs for more than 50 seconds
       const controller = new AbortController();
@@ -118,7 +119,7 @@ async function invokeAI<T = unknown>(
             Authorization: `Bearer ${authToken}`,
             apikey: SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ action, ...(payload ?? {}) }),
+          body: JSON.stringify({ action, ...(payload ?? {}), ...(userId ? { userId } : {}) }),
           signal: controller.signal,
         });
       } catch (networkErr) {
