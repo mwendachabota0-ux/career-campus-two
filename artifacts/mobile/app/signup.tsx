@@ -30,6 +30,7 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
   const s = styles(colors);
 
@@ -45,6 +46,8 @@ export default function SignupScreen() {
       const result = await signUp(email.trim(), password, displayName.trim());
       if (!result.success) {
         setError(result.error ?? 'Sign up failed.');
+      } else {
+        setSuccess(true);
       }
     } finally {
       setLoading(false);
@@ -62,121 +65,149 @@ export default function SignupScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Back */}
-        <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
-          <Feather name="arrow-left" size={20} color={colors.text} />
-        </Pressable>
+        {!success && (
+          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
+            <Feather name="arrow-left" size={20} color={colors.text} />
+          </Pressable>
+        )}
 
         {/* Logo / Brand */}
         <View style={s.brand}>
           <View style={s.logoWrap}>
-            <Feather name="compass" size={32} color="#fff" />
+            <Feather name={success ? 'check' : 'compass'} size={32} color="#fff" />
           </View>
-          <Text style={s.appName}>Create Account</Text>
-          <Text style={s.tagline}>Join Career Campus today</Text>
+          <Text style={s.appName}>{success ? 'Account Created!' : 'Create Account'}</Text>
+          <Text style={s.tagline}>{success ? `Welcome to Career Campus, ${displayName.split(' ')[0]}` : 'Join Career Campus today'}</Text>
         </View>
 
-        {/* Card */}
-        <View style={s.card}>
-          {error ? (
-            <View style={s.errorBox}>
-              <Feather name="alert-circle" size={14} color={colors.danger} />
-              <Text style={s.errorText}>{error}</Text>
+        {success ? (
+          /* ── Success state ── */
+          <View style={s.card}>
+            <View style={s.successBox}>
+              <Feather name="mail" size={20} color={colors.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.successTitle}>Check your inbox</Text>
+                <Text style={s.successBody}>
+                  We sent a confirmation link to{' '}
+                  <Text style={{ fontFamily: 'Inter_600SemiBold' }}>{email.trim()}</Text>.
+                  {'\n\n'}Click the link to activate your account, then sign in below.
+                </Text>
+              </View>
             </View>
-          ) : null}
-
-          {/* Name */}
-          <View style={s.fieldWrap}>
-            <Text style={s.label}>Full Name</Text>
-            <View style={s.inputRow}>
-              <Feather name="user" size={16} color={colors.textMuted} style={s.inputIcon} />
-              <TextInput
-                style={s.input}
-                placeholder="Your name"
-                placeholderTextColor={colors.textMuted}
-                value={displayName}
-                onChangeText={setDisplayName}
-                autoCapitalize="words"
-                returnKeyType="next"
-              />
-            </View>
+            <Pressable
+              style={s.primaryBtn}
+              onPress={() => router.replace('/login')}
+            >
+              <Feather name="log-in" size={16} color="#fff" />
+              <Text style={s.primaryBtnText}>Go to Sign In</Text>
+            </Pressable>
           </View>
+        ) : (
+          /* ── Sign-up form ── */
+          <View style={s.card}>
+            {error ? (
+              <View style={s.errorBox}>
+                <Feather name="alert-circle" size={14} color={colors.danger} />
+                <Text style={s.errorText}>{error}</Text>
+              </View>
+            ) : null}
 
-          {/* Email */}
-          <View style={s.fieldWrap}>
-            <Text style={s.label}>Email</Text>
-            <View style={s.inputRow}>
-              <Feather name="mail" size={16} color={colors.textMuted} style={s.inputIcon} />
-              <TextInput
-                style={s.input}
-                placeholder="you@example.com"
-                placeholderTextColor={colors.textMuted}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoCorrect={false}
-                returnKeyType="next"
-              />
+            {/* Name */}
+            <View style={s.fieldWrap}>
+              <Text style={s.label}>Full Name</Text>
+              <View style={s.inputRow}>
+                <Feather name="user" size={16} color={colors.textMuted} style={s.inputIcon} />
+                <TextInput
+                  style={s.input}
+                  placeholder="Your name"
+                  placeholderTextColor={colors.textMuted}
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                />
+              </View>
             </View>
-          </View>
 
-          {/* Password */}
-          <View style={s.fieldWrap}>
-            <Text style={s.label}>Password</Text>
-            <View style={s.inputRow}>
-              <Feather name="lock" size={16} color={colors.textMuted} style={s.inputIcon} />
-              <TextInput
-                style={[s.input, { flex: 1 }]}
-                placeholder="Min. 6 characters"
-                placeholderTextColor={colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                returnKeyType="next"
-              />
-              <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8} style={s.eyeBtn}>
-                <Feather name={showPassword ? 'eye-off' : 'eye'} size={16} color={colors.textMuted} />
-              </Pressable>
+            {/* Email */}
+            <View style={s.fieldWrap}>
+              <Text style={s.label}>Email</Text>
+              <View style={s.inputRow}>
+                <Feather name="mail" size={16} color={colors.textMuted} style={s.inputIcon} />
+                <TextInput
+                  style={s.input}
+                  placeholder="you@example.com"
+                  placeholderTextColor={colors.textMuted}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                />
+              </View>
             </View>
-          </View>
 
-          {/* Confirm Password */}
-          <View style={s.fieldWrap}>
-            <Text style={s.label}>Confirm Password</Text>
-            <View style={s.inputRow}>
-              <Feather name="lock" size={16} color={colors.textMuted} style={s.inputIcon} />
-              <TextInput
-                style={[s.input, { flex: 1 }]}
-                placeholder="Re-enter password"
-                placeholderTextColor={colors.textMuted}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showPassword}
-                returnKeyType="done"
-                onSubmitEditing={handleSignup}
-              />
+            {/* Password */}
+            <View style={s.fieldWrap}>
+              <Text style={s.label}>Password</Text>
+              <View style={s.inputRow}>
+                <Feather name="lock" size={16} color={colors.textMuted} style={s.inputIcon} />
+                <TextInput
+                  style={[s.input, { flex: 1 }]}
+                  placeholder="Min. 6 characters"
+                  placeholderTextColor={colors.textMuted}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  returnKeyType="next"
+                />
+                <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8} style={s.eyeBtn}>
+                  <Feather name={showPassword ? 'eye-off' : 'eye'} size={16} color={colors.textMuted} />
+                </Pressable>
+              </View>
             </View>
-          </View>
 
-          {/* Sign Up Button */}
-          <Pressable
-            style={({ pressed }) => [s.primaryBtn, pressed && { opacity: 0.85 }, loading && { opacity: 0.7 }]}
-            onPress={handleSignup}
-            disabled={loading}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.primaryBtnText}>Create Account</Text>}
-          </Pressable>
-        </View>
+            {/* Confirm Password */}
+            <View style={s.fieldWrap}>
+              <Text style={s.label}>Confirm Password</Text>
+              <View style={s.inputRow}>
+                <Feather name="lock" size={16} color={colors.textMuted} style={s.inputIcon} />
+                <TextInput
+                  style={[s.input, { flex: 1 }]}
+                  placeholder="Re-enter password"
+                  placeholderTextColor={colors.textMuted}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showPassword}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSignup}
+                />
+              </View>
+            </View>
+
+            {/* Sign Up Button */}
+            <Pressable
+              style={({ pressed }) => [s.primaryBtn, pressed && { opacity: 0.85 }, loading && { opacity: 0.7 }]}
+              onPress={handleSignup}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <><Feather name="user-plus" size={16} color="#fff" /><Text style={s.primaryBtnText}>Create Account</Text></>}
+            </Pressable>
+          </View>
+        )}
 
         {/* Footer */}
-        <View style={s.footer}>
-          <Text style={s.footerText}>Already have an account?</Text>
-          <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text style={s.footerLink}> Sign in</Text>
-          </Pressable>
-        </View>
+        {!success && (
+          <View style={s.footer}>
+            <Text style={s.footerText}>Already have an account?</Text>
+            <Pressable onPress={() => router.back()} hitSlop={8}>
+              <Text style={s.footerLink}> Sign in</Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -220,6 +251,15 @@ const styles = (colors: ReturnType<typeof useColors>) => StyleSheet.create({
     elevation: 6,
   },
 
+  successBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    backgroundColor: colors.successBg,
+    borderWidth: 1, borderColor: colors.successBorder,
+    borderRadius: 14, padding: 16, marginBottom: 20,
+  },
+  successTitle: { fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.success, marginBottom: 4 },
+  successBody: { fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.text, lineHeight: 19 },
+
   errorBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.dangerBg,
@@ -248,9 +288,9 @@ const styles = (colors: ReturnType<typeof useColors>) => StyleSheet.create({
   eyeBtn: { padding: 4 },
 
   primaryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: colors.primary,
     borderRadius: 14, height: 52,
-    alignItems: 'center', justifyContent: 'center',
     marginTop: 8,
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },

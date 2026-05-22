@@ -34,16 +34,16 @@ export function cleanAiResponse(text: string): string {
  * Format a JSON string response by cleaning any markdown
  * Useful for responses that might contain markdown in JSON fields
  */
-export function cleanJsonResponse<T extends Record<string, any>>(data: T): T {
-  const cleaned = { ...data };
+export function cleanJsonResponse<T extends Record<string, unknown>>(data: T): T {
+  const cleaned = { ...data } as Record<string, unknown>;
 
   for (const key in cleaned) {
     if (typeof cleaned[key] === 'string') {
-      cleaned[key] = cleanAiResponse(cleaned[key]);
+      cleaned[key] = cleanAiResponse(cleaned[key] as string);
     } else if (typeof cleaned[key] === 'object' && cleaned[key] !== null) {
-      cleaned[key] = cleanJsonResponse(cleaned[key]);
+      cleaned[key] = cleanJsonResponse(cleaned[key] as Record<string, unknown>);
     }
   }
 
-  return cleaned;
+  return cleaned as T;
 }

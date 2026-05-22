@@ -859,6 +859,10 @@ const styles = (colors: ReturnType<typeof useColors>) => StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  cardHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 16,
+  },
   cardTitle: { fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.text },
   editBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,

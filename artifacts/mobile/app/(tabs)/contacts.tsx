@@ -135,7 +135,10 @@ const ALL_EVENTS_KEY       = 'cc_all_events';
 
 function isPastEvent(event: NetworkingEvent): boolean {
   if (!event.dateIso) return false;
-  return new Date(event.dateIso) < new Date();
+  // Compare against end of the event day so today's events are never flagged as past
+  const endOfDay = new Date(event.dateIso);
+  endOfDay.setHours(23, 59, 59, 999);
+  return endOfDay < new Date();
 }
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
@@ -179,7 +182,7 @@ export default function NetworkScreen() {
     setFetchError(null);
     try {
       const data = await aiService.networkingEvents({
-          city: profile?.city || 'Zambia',
+          city: profile?.city || profile?.preferredIndustries ? (profile?.city || 'Zambia') : 'Zambia',
           degree: profile?.currentDegree || '',
           skills: profile?.skills || '',
           preferredIndustries: profile?.preferredIndustries || '',

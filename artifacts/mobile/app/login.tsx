@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
   const colors = useColors();
@@ -28,6 +30,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
 
   const s = styles(colors);
 
@@ -42,6 +45,26 @@ export default function LoginScreen() {
       const result = await signIn(email.trim(), password);
       if (!result.success) {
         setError(result.error ?? 'Login failed.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError('Enter your email above first, then tap Forgot Password.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(trimmed);
+      if (resetErr) {
+        setError(resetErr.message || 'Could not send reset email.');
+      } else {
+        setResetSent(true);
       }
     } finally {
       setLoading(false);
@@ -67,77 +90,105 @@ export default function LoginScreen() {
           <Text style={s.tagline}>Your career journey starts here</Text>
         </View>
 
-        {/* Card */}
-        <View style={s.card}>
-          <Text style={s.heading}>Welcome back</Text>
-          <Text style={s.subheading}>Sign in to continue</Text>
-
-          {error ? (
-            <View style={s.errorBox}>
-              <Feather name="alert-circle" size={14} color={colors.danger} />
-              <Text style={s.errorText}>{error}</Text>
+        {/* Reset-sent confirmation */}
+        {resetSent ? (
+          <View style={s.card}>
+            <View style={s.successBox}>
+              <Feather name="mail" size={20} color={colors.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.successTitle}>Check your email</Text>
+                <Text style={s.successBody}>
+                  We sent a password reset link to <Text style={{ fontFamily: 'Inter_600SemiBold' }}>{email.trim()}</Text>. Follow the link to set a new password, then come back and sign in.
+                </Text>
+              </View>
             </View>
-          ) : null}
-
-          {/* Email */}
-          <View style={s.fieldWrap}>
-            <Text style={s.label}>Email</Text>
-            <View style={s.inputRow}>
-              <Feather name="mail" size={16} color={colors.textMuted} style={s.inputIcon} />
-              <TextInput
-                style={s.input}
-                placeholder="you@example.com"
-                placeholderTextColor={colors.textMuted}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoCorrect={false}
-                returnKeyType="next"
-              />
-            </View>
+            <Pressable
+              style={[s.primaryBtn, { marginTop: 0 }]}
+              onPress={() => { setResetSent(false); setPassword(''); }}
+            >
+              <Text style={s.primaryBtnText}>Back to Sign In</Text>
+            </Pressable>
           </View>
+        ) : (
+          /* Card */
+          <View style={s.card}>
+            <Text style={s.heading}>Welcome back</Text>
+            <Text style={s.subheading}>Sign in to continue</Text>
 
-          {/* Password */}
-          <View style={s.fieldWrap}>
-            <Text style={s.label}>Password</Text>
-            <View style={s.inputRow}>
-              <Feather name="lock" size={16} color={colors.textMuted} style={s.inputIcon} />
-              <TextInput
-                style={[s.input, { flex: 1 }]}
-                placeholder="••••••••"
-                placeholderTextColor={colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-              />
-              <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8} style={s.eyeBtn}>
-                <Feather name={showPassword ? 'eye-off' : 'eye'} size={16} color={colors.textMuted} />
-              </Pressable>
+            {error ? (
+              <View style={s.errorBox}>
+                <Feather name="alert-circle" size={14} color={colors.danger} />
+                <Text style={s.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            {/* Email */}
+            <View style={s.fieldWrap}>
+              <Text style={s.label}>Email</Text>
+              <View style={s.inputRow}>
+                <Feather name="mail" size={16} color={colors.textMuted} style={s.inputIcon} />
+                <TextInput
+                  style={s.input}
+                  placeholder="you@example.com"
+                  placeholderTextColor={colors.textMuted}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                />
+              </View>
             </View>
-          </View>
 
-          {/* Sign In Button */}
-          <Pressable
-            style={({ pressed }) => [s.primaryBtn, pressed && { opacity: 0.85 }, loading && { opacity: 0.7 }]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.primaryBtnText}>Sign In</Text>}
-          </Pressable>
-        </View>
+            {/* Password */}
+            <View style={s.fieldWrap}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={s.label}>Password</Text>
+                <Pressable onPress={handleForgotPassword} hitSlop={8} disabled={loading}>
+                  <Text style={[s.forgotLink, loading && { opacity: 0.5 }]}>Forgot password?</Text>
+                </Pressable>
+              </View>
+              <View style={s.inputRow}>
+                <Feather name="lock" size={16} color={colors.textMuted} style={s.inputIcon} />
+                <TextInput
+                  style={[s.input, { flex: 1 }]}
+                  placeholder="••••••••"
+                  placeholderTextColor={colors.textMuted}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                />
+                <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8} style={s.eyeBtn}>
+                  <Feather name={showPassword ? 'eye-off' : 'eye'} size={16} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Sign In Button */}
+            <Pressable
+              style={({ pressed }) => [s.primaryBtn, pressed && { opacity: 0.85 }, loading && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={s.primaryBtnText}>Sign In</Text>}
+            </Pressable>
+          </View>
+        )}
 
         {/* Footer */}
-        <View style={s.footer}>
-          <Text style={s.footerText}>Don't have an account?</Text>
-          <Pressable onPress={() => router.push('/signup')} hitSlop={8}>
-            <Text style={s.footerLink}> Sign up</Text>
-          </Pressable>
-        </View>
+        {!resetSent && (
+          <View style={s.footer}>
+            <Text style={s.footerText}>Don't have an account?</Text>
+            <Pressable onPress={() => router.push('/signup')} hitSlop={8}>
+              <Text style={s.footerLink}> Sign up</Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -187,6 +238,15 @@ const styles = (colors: ReturnType<typeof useColors>) => StyleSheet.create({
     color: colors.textMuted, marginBottom: 20,
   },
 
+  successBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    backgroundColor: colors.successBg,
+    borderWidth: 1, borderColor: colors.successBorder,
+    borderRadius: 14, padding: 16, marginBottom: 20,
+  },
+  successTitle: { fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.success, marginBottom: 4 },
+  successBody: { fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.text, lineHeight: 19 },
+
   errorBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.dangerBg,
@@ -198,8 +258,11 @@ const styles = (colors: ReturnType<typeof useColors>) => StyleSheet.create({
   fieldWrap: { marginBottom: 16 },
   label: {
     fontSize: 12, fontFamily: 'Inter_600SemiBold',
-    color: colors.textSecondary, marginBottom: 8,
+    color: colors.textSecondary,
     textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  forgotLink: {
+    fontSize: 12, fontFamily: 'Inter_500Medium', color: colors.primary,
   },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',

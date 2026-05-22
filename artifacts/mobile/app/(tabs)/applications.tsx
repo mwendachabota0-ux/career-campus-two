@@ -75,32 +75,39 @@ function DatePickerField({
     : '';
   return (
     <View style={{ marginBottom: open ? 0 : 18 }}>
-      <Pressable
-        style={{
-          flexDirection: 'row', alignItems: 'center', gap: 10,
-          backgroundColor: colors.muted, borderRadius: 14, padding: 16,
-          borderWidth: 1, borderColor: open ? colors.primary : colors.border,
-        }}
-        onPress={() => { Haptics.selectionAsync(); setOpen(o => !o); }}
-        accessibilityLabel="Select deadline date"
-        accessibilityRole="button"
-      >
-        <Feather name="calendar" size={16} color={displayValue ? colors.primary : colors.textMuted} />
-        <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', color: displayValue ? colors.text : colors.textMuted }}>
-          {displayValue || placeholder}
-        </Text>
+      {/* Outer row is a plain View to avoid nested <button> elements on web */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: colors.muted, borderRadius: 14,
+        borderWidth: 1, borderColor: open ? colors.primary : colors.border,
+        overflow: 'hidden',
+      }}>
+        {/* Main tap target — opens / closes calendar */}
+        <Pressable
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 }}
+          onPress={() => { Haptics.selectionAsync(); setOpen(o => !o); }}
+          accessibilityLabel="Select deadline date"
+          accessibilityRole="button"
+        >
+          <Feather name="calendar" size={16} color={displayValue ? colors.primary : colors.textMuted} />
+          <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', color: displayValue ? colors.text : colors.textMuted }}>
+            {displayValue || placeholder}
+          </Text>
+          <Feather name={open ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
+        </Pressable>
+        {/* Clear button — sibling, NOT nested inside the main Pressable */}
         {displayValue ? (
           <Pressable
             onPress={() => { onChange(''); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
             hitSlop={10}
+            style={{ paddingRight: 14, paddingLeft: 4 }}
             accessibilityLabel="Clear date"
             accessibilityRole="button"
           >
             <Feather name="x" size={14} color={colors.textMuted} />
           </Pressable>
         ) : null}
-        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
-      </Pressable>
+      </View>
       {open && (
         <View style={{
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.primary,
@@ -135,7 +142,7 @@ function DatePickerField({
                     <Pressable
                       key={colI}
                       style={{ flex: 1, alignItems: 'center', paddingVertical: 5 }}
-                      onPress={() => { onChange(new Date(year, month, day).toISOString().split('T')[0]); setOpen(false); Haptics.selectionAsync(); }}
+                      onPress={() => { onChange(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`); setOpen(false); Haptics.selectionAsync(); }}
                       accessibilityLabel={`${day} ${CAL_MONTHS[month]} ${year}`}
                     >
                       <View style={[
