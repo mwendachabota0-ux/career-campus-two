@@ -1,11 +1,13 @@
 import { BlurView } from 'expo-blur';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Tabs } from 'expo-router';
+import { Tabs, useNavigation } from 'expo-router';
 import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
 import { SymbolView } from 'expo-symbols';
 import { Feather } from '@expo/vector-icons';
-import React from 'react';
-import { Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import React, { useRef } from 'react';
+import { Platform, StyleSheet, Text, useColorScheme, View, Dimensions } from 'react-native';
+import { PanGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 
 import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
@@ -42,41 +44,67 @@ function ClassicTabLayout() {
   const isDark = colors.isDark;
   const isIOS = Platform.OS === 'ios';
   const { applications, contacts } = useApp();
+  const navigation = useNavigation();
   const activeApps = applications.filter(a => a.status === 'Applied' || a.status === 'Interviewing').length;
   const followUps = contacts.filter(c => c.needsFollowUp).length;
 
+  const tabs = ['index', 'contacts', 'companies', 'applications', 'profile'];
+  const currentTabIndex = useRef(0);
+
+  const handleSwipe = (nativeEvent: any) => {
+    const { translationX } = nativeEvent;
+    
+    if (Math.abs(translationX) > 50) {
+      let nextIndex = currentTabIndex.current;
+      
+      if (translationX > 50) {
+        // Swipe right - go to previous tab
+        nextIndex = Math.max(0, currentTabIndex.current - 1);
+      } else if (translationX < -50) {
+        // Swipe left - go to next tab
+        nextIndex = Math.min(tabs.length - 1, currentTabIndex.current + 1);
+      }
+      
+      if (nextIndex !== currentTabIndex.current) {
+        currentTabIndex.current = nextIndex;
+        navigation.navigate(tabs[nextIndex] as any);
+      }
+    }
+  };
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          position: 'absolute',
-          backgroundColor: isIOS ? 'transparent' : colors.card,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          elevation: 12,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -3 },
-          shadowOpacity: isDark ? 0.35 : 0.12,
-          shadowRadius: 12,
-          height: Platform.OS === 'web' ? 72 : 62,
-          paddingBottom: Platform.OS === 'web' ? 8 : 8,
-          paddingTop: 6,
-        },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          ) : null,
-        tabBarLabelStyle: {
-          fontFamily: 'Inter_600SemiBold',
-          fontSize: 10,
-          letterSpacing: 0.2,
-        },
-        tabBarIconStyle: { marginTop: 2 },
-      }}
-    >
+    <PanGestureHandler onGestureEvent={(e) => handleSwipe(e.nativeEvent)}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textMuted,
+          tabBarStyle: {
+            position: 'absolute',
+            backgroundColor: isIOS ? 'transparent' : colors.card,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            elevation: 12,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -3 },
+            shadowOpacity: isDark ? 0.35 : 0.12,
+            shadowRadius: 12,
+            height: Platform.OS === 'web' ? 72 : 62,
+            paddingBottom: Platform.OS === 'web' ? 8 : 8,
+            paddingTop: 6,
+          },
+          tabBarBackground: () =>
+            isIOS ? (
+              <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            ) : null,
+          tabBarLabelStyle: {
+            fontFamily: 'Inter_600SemiBold',
+            fontSize: 10,
+            letterSpacing: 0.2,
+          },
+          tabBarIconStyle: { marginTop: 2 },
+        }}
+      >
       {/* ── Tab 1: Home ── */}
       <Tabs.Screen
         name="index"
@@ -149,6 +177,7 @@ function ClassicTabLayout() {
       {/* ── Hidden screens ── */}
       <Tabs.Screen name="prep" options={{ href: null }} />
     </Tabs>
+    </PanGestureHandler>
   );
 }
 
