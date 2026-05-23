@@ -21,6 +21,7 @@ import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
 import { aiService } from '@/lib/aiService';
 import { getCvContent } from '@/utils/docContext';
+import { extractPartialProfile, extractProfileComplete, cleanMarkdown } from '@/utils/markerParser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CHAT_KEY = 'cc_profile_chat';
@@ -873,13 +874,17 @@ export default function OnboardingScreen() {
         resuming,
       });
 
+      // Parse markers from response
+      const { reply: cleanReply, profile: completeProfile } = extractProfileComplete(data.reply || '');
+      const partialProfile = extractPartialProfile(data.reply || '') || data.partialProfile;
+
       const aiMsg: ChatMessage = {
         role: 'assistant',
-        content: cleanAiResponse(
-          data.reply || (resuming
+        content: cleanAiResponse(cleanMarkdown(
+          cleanReply || (resuming
             ? "Welcome back! Let me know if you'd like to update anything."
             : "Hi! I'm Career Compass AI. What's your name?"),
-        ),
+        )),
       };
 
       // Append to existing history (if resuming) or start fresh
@@ -890,8 +895,12 @@ export default function OnboardingScreen() {
       setMessages(fullMessages);
       AsyncStorage.setItem(CHAT_KEY, JSON.stringify(fullMessages)).catch(() => {});
 
-      if (data.partialProfile)
-        setSnapshot(prev => mergePartialProfile(data.partialProfile!, prev));
+      // Update profile from markers (complete overrides partial)
+      if (completeProfile) {
+        setSnapshot(prev => ({ ...prev, ...completeProfile }));
+      } else if (partialProfile) {
+        setSnapshot(prev => mergePartialProfile(partialProfile, prev));
+      }
     } catch (err: any) {
       const errMsg: string = err?.message ?? 'Connection error';
       if (errMsg.includes('busy') || errMsg.includes('rate') || errMsg.includes('high demand')) {
@@ -1030,19 +1039,26 @@ export default function OnboardingScreen() {
         conversational: true,
       });
 
+      // Parse markers from response
+      const { reply: cleanReply, profile: completeProfile } = extractProfileComplete(data.reply || '');
+      const partialProfile = extractPartialProfile(data.reply || '') || data.partialProfile;
+
       const aiMsg: ChatMessage = {
         role: 'assistant',
-        content: cleanAiResponse(
-          data.reply || "I'm having trouble — please try again.",
-        ),
+        content: cleanAiResponse(cleanMarkdown(
+          cleanReply || "I'm having trouble — please try again.",
+        )),
       };
       const fullHistory = [...updatedMessages, aiMsg];
       setMessages(fullHistory);
       AsyncStorage.setItem(CHAT_KEY, JSON.stringify(fullHistory)).catch(() => {});
 
-      if (data.partialProfile) {
+      // Update profile from markers (complete overrides partial)
+      if (completeProfile) {
+        setSnapshot(prev => ({ ...prev, ...completeProfile }));
+      } else if (partialProfile) {
         setSnapshot(prev => {
-          const merged = mergePartialProfile(data.partialProfile!, prev);
+          const merged = mergePartialProfile(partialProfile, prev);
           // Immediately persist partial data so the profile tab stays in sync
           if (profile && merged.profileFields && merged.profileFields.length > 0) {
             const existingFieldsById = new Map(
@@ -1072,6 +1088,10 @@ export default function OnboardingScreen() {
               profileFields:
                 profileFields.length > 0 ? profileFields : (profile.profileFields ?? []),
             }).catch(() => {});
+          }
+          return merged;
+        });
+      }
           }
           return merged;
         });
