@@ -55,45 +55,6 @@ interface SimilaritySearchResponse {
   error?: string
 }
 
-// ===== TYPE DEFINITIONS =====
-interface TextOnlyResponse {
-  reply: string
-  model: string
-  isComplete: boolean
-  error?: string
-}
-
-interface HybridResponse {
-  reply?: string
-  embedding?: number[]
-  text_model?: string
-  embedding_model?: string
-  status: 'full' | 'text_only' | 'embedding_only' | 'failed'
-  errors?: Record<string, string>
-}
-
-interface EmbeddingResponse {
-  embedding: number[]
-  model: string
-  dimensions: number
-  error?: string
-}
-
-interface SimilarityResult {
-  text: string
-  similarity: number
-  error: null | string
-}
-
-interface SimilaritySearchResponse {
-  query: string
-  query_model: string
-  results: SimilarityResult[]
-  total_candidates: number
-  successfully_scored: number
-  error?: string
-}
-
 // ===== 1. TEXT-ONLY CHAT (Traditional, backwards compatible) =====
 /**
  * Simple text chat with automatic fallback to gemini-1.5-flash if gemini-2.5-flash fails
