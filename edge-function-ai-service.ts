@@ -381,6 +381,24 @@ async function handleSimilaritySearch(body: Record<string, unknown>): Promise<Re
   }
 }
 
+// ===== NETWORKING EVENTS =====
+async function handleNetworkingEvents(body: Record<string, unknown>): Promise<Response> {
+  try {
+    const userContext = JSON.stringify(body).slice(0, 2000)
+    if (!userContext?.trim()) return json({ error: 'No data' }, 400)
+
+    const result = await callGeminiWithFallback(
+      'You are Career Compass AI. Suggest 5-10 networking events, conferences, and webinars relevant to the user. Be specific with event names, types, and dates.',
+      userContext
+    )
+
+    return json({ events: result.reply, model: result.model, structured_events: [] })
+  } catch (error: any) {
+    console.error('Networking events error:', error)
+    return json({ error: error?.message || 'Networking events failed' }, 500)
+  }
+}
+
 // ===== MAIN HANDLER =====
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -416,6 +434,10 @@ Deno.serve(async (req: Request) => {
       // Semantic similarity search
       case 'similarity-search':
         return await handleSimilaritySearch(body)
+
+      // Networking events
+      case 'networking-events':
+        return await handleNetworkingEvents(body)
 
       default:
         return json({ error: `Unknown action: ${action}` }, 400)
