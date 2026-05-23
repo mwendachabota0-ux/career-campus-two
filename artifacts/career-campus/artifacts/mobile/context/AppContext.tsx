@@ -230,9 +230,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { success: true };
   }, []);
 
-  const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
-  }, []);
+    const signOut = useCallback(async () => {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // ignore remote sign-out errors
+      } finally {
+        // Always clear local state immediately so the UI reflects signed-out state
+        setIsAuthenticated(false);
+        setProfile(null);
+        setApplications([]);
+        setContacts([]);
+        setSavedEvents([]);
+        setDocs([]);
+      }
+    }, []);
 
   const saveApps = useCallback(async (apps: Application[]) => {
     setApplications(apps);

@@ -638,7 +638,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       await supabase.auth.signOut();
     } catch {
-      // If sign-out fails remotely, clear local state anyway
+      // ignore remote sign-out errors
+    } finally {
+      // Always clear local state immediately so the UI reflects signed-out state
       setIsAuthenticated(false);
       setProfile(null);
       setApplications([]);

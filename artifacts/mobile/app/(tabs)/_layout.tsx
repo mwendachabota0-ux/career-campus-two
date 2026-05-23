@@ -56,17 +56,30 @@ function ClassicTabLayout() {
     const { translationX } = nativeEvent;
     
     if (Math.abs(translationX) > 50) {
-      let nextIndex = currentTabIndex.current;
-      
+      // Derive the current active tab index from navigation state to avoid
+      // relying on a stale ref when the user taps tabs directly.
+      let activeIndex = currentTabIndex.current;
+      try {
+        const state = (navigation as any)?.getState?.();
+        if (state && typeof state.index === 'number' && Array.isArray(state.routes)) {
+          const routeName = state.routes[state.index]?.name;
+          const routeIdx = tabs.indexOf(routeName);
+          if (routeIdx >= 0) activeIndex = routeIdx;
+        }
+      } catch (_e) {
+        // ignore and fall back to ref
+      }
+
+      let nextIndex = activeIndex;
       if (translationX > 50) {
         // Swipe right - go to previous tab
-        nextIndex = Math.max(0, currentTabIndex.current - 1);
+        nextIndex = Math.max(0, activeIndex - 1);
       } else if (translationX < -50) {
         // Swipe left - go to next tab
-        nextIndex = Math.min(tabs.length - 1, currentTabIndex.current + 1);
+        nextIndex = Math.min(tabs.length - 1, activeIndex + 1);
       }
-      
-      if (nextIndex !== currentTabIndex.current) {
+
+      if (nextIndex !== activeIndex) {
         currentTabIndex.current = nextIndex;
         navigation.navigate(tabs[nextIndex] as any);
       }
