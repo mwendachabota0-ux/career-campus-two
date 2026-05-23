@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -123,10 +123,16 @@ export default function DocsScreen() {
 
       const ext = asset.name.split('.').pop()?.toLowerCase() || 'bin';
       const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const localUri = DOCS_DIR ? `${DOCS_DIR}${uniqueName}` : asset.uri;
+      let localUri = DOCS_DIR ? `${DOCS_DIR}${uniqueName}` : asset.uri;
 
-      if (DOCS_DIR) {
-        await FileSystem.copyAsync({ from: asset.uri, to: localUri });
+      if (DOCS_DIR && asset.uri !== localUri) {
+        try {
+          await FileSystem.copyAsync({ from: asset.uri, to: localUri });
+        } catch (copyErr) {
+          console.warn('File copy failed, falling back to asset URI:', copyErr);
+          // Fallback: use asset URI directly if copy fails
+          localUri = asset.uri;
+        }
       }
 
       const stored = await addDoc({
