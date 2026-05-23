@@ -303,12 +303,10 @@ function MessageBubble({
 function FloatingProfilePanel({
   snapshot,
   onSave,
-  onContinue,
   colors,
 }: {
   snapshot: ProfileSnapshot;
   onSave: () => void;
-  onContinue: () => void;
   colors: ReturnType<typeof useColors>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -533,23 +531,6 @@ function FloatingProfilePanel({
             >
               <Feather name="save" size={14} color="#fff" />
               <Text style={floatStyles.saveBtnText}>Save Profile</Text>
-            </Pressable>
-            
-            <Pressable
-              style={[
-                floatStyles.saveBtn,
-                {
-                  backgroundColor: colors.success,
-                },
-              ]}
-              onPress={() => {
-                toggleExpanded();
-                onContinue();
-              }}
-              android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-            >
-              <Feather name="arrow-right" size={14} color="#fff" />
-              <Text style={floatStyles.saveBtnText}>Continue to Career Compass</Text>
             </Pressable>
           </View>
         </Animated.View>
@@ -1133,12 +1114,6 @@ export default function OnboardingScreen() {
     router.replace('/(tabs)');
   }, [snapshot, saveProfile, router]);
 
-  const handleContinue = useCallback(async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    await saveProfile(snapshot);
-    router.replace('/(tabs)');
-  }, [snapshot, saveProfile, router]);
-
   const handleSkip = useCallback(() => {
     router.replace('/(tabs)');
   }, [router]);
@@ -1318,7 +1293,6 @@ export default function OnboardingScreen() {
         <FloatingProfilePanel
           snapshot={snapshot}
           onSave={handleManualSave}
-          onContinue={handleContinue}
           colors={colors}
         />
       </View>

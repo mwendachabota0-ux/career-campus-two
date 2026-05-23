@@ -143,8 +143,13 @@ export default function DocsScreen() {
       const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const localUri = DOCS_DIR ? `${DOCS_DIR}${uniqueName}` : asset.uri;
 
-      if (DOCS_DIR) {
-        await FileSystem.copyAsync({ from: asset.uri, to: localUri });
+      if (DOCS_DIR && asset.uri !== localUri) {
+        try {
+          await FileSystem.copyAsync({ from: asset.uri, to: localUri });
+        } catch (copyErr) {
+          console.warn('File copy failed, using direct URI:', copyErr);
+          // Fallback: use asset URI directly if copy fails
+        }
       }
 
       const stored = await addDoc({

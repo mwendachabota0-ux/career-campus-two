@@ -499,7 +499,18 @@ async function handleDiscoverCompanies(body: Record<string, unknown>): Promise<R
   const degree = (body.degree as string | undefined) ?? ''
 
   if (!location?.trim()) {
-    return json({ error: 'Location required' }, 400)
+    return json({ 
+      error: 'Location is required to search for companies',
+      code: 'LOCATION_MISSING'
+    }, 400)
+  }
+
+  // Validate all fields are strings
+  if (typeof location !== 'string' || typeof industry !== 'string' || typeof skills !== 'string' || typeof degree !== 'string') {
+    return json({ 
+      error: 'Invalid request parameters',
+      code: 'INVALID_PARAMS'
+    }, 400)
   }
 
   const prompt = `Find and list 10-15 companies in ${location} that would be good opportunities for:
