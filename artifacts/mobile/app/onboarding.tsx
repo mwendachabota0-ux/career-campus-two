@@ -303,10 +303,12 @@ function MessageBubble({
 function FloatingProfilePanel({
   snapshot,
   onSave,
+  onContinue,
   colors,
 }: {
   snapshot: ProfileSnapshot;
   onSave: () => void;
+  onContinue: () => void;
   colors: ReturnType<typeof useColors>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -513,7 +515,7 @@ function FloatingProfilePanel({
             )}
           </ScrollView>
 
-          <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
             <Pressable
               style={[
                 floatStyles.saveBtn,
@@ -530,7 +532,24 @@ function FloatingProfilePanel({
               disabled={fieldCount === 0}
             >
               <Feather name="save" size={14} color="#fff" />
-              <Text style={floatStyles.saveBtnText}>Save & Continue</Text>
+              <Text style={floatStyles.saveBtnText}>Save Profile</Text>
+            </Pressable>
+            
+            <Pressable
+              style={[
+                floatStyles.saveBtn,
+                {
+                  backgroundColor: colors.success,
+                },
+              ]}
+              onPress={() => {
+                toggleExpanded();
+                onContinue();
+              }}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+            >
+              <Feather name="arrow-right" size={14} color="#fff" />
+              <Text style={floatStyles.saveBtnText}>Continue to Career Compass</Text>
             </Pressable>
           </View>
         </Animated.View>
@@ -993,7 +1012,7 @@ export default function OnboardingScreen() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || isThinking || isDone || isLoadingFirst) return;
+    if (!text || isThinking || isLoadingFirst) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const userMsg: ChatMessage = { role: 'user', content: text };
@@ -1076,14 +1095,8 @@ export default function OnboardingScreen() {
           return merged;
         });
       }
-
-      if (data.isComplete && data.profileData) {
-        setIsDone(true);
-        Haptics.notificationAsync(
-          Haptics.NotificationFeedbackType.Success,
-        );
-        await saveProfile(data.profileData as ProfileSnapshot);
-      }
+      
+      // Chat continues indefinitely - user clicks "Continue to Career Campus" when ready
     } catch (err: any) {
       const errMsg: string = err?.message ?? '';
       const isRateLimit =
@@ -1106,7 +1119,6 @@ export default function OnboardingScreen() {
   }, [
     input,
     isThinking,
-    isDone,
     isLoadingFirst,
     messages,
     editingIndex,
@@ -1121,9 +1133,11 @@ export default function OnboardingScreen() {
     router.replace('/(tabs)');
   }, [snapshot, saveProfile, router]);
 
-  const handleContinue = useCallback(() => {
+  const handleContinue = useCallback(async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await saveProfile(snapshot);
     router.replace('/(tabs)');
-  }, [router]);
+  }, [snapshot, saveProfile, router]);
 
   const handleSkip = useCallback(() => {
     router.replace('/(tabs)');
@@ -1254,7 +1268,7 @@ export default function OnboardingScreen() {
                 colors={colors}
                 index={i}
                 isLastUser={isLastUser}
-                onEdit={!isDone ? () => handleEditMessage(i) : undefined}
+                onEdit={() => handleEditMessage(i)}
               />
             );
           })}
@@ -1299,75 +1313,51 @@ export default function OnboardingScreen() {
               </View>
             </Animated.View>
           )}
-
-          {isDone && (
-            <View style={s.doneCard}>
-              <View style={s.doneIconWrap}>
-                <Feather name="check" size={22} color="#10b981" />
-              </View>
-              <Text style={s.doneTitle}>Profile saved!</Text>
-              <Text style={s.doneSub}>
-                You're all set. Let's find your next opportunity.
-              </Text>
-              <Pressable
-                style={s.continueBtn}
-                onPress={handleContinue}
-                android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
-              >
-                <Text style={s.continueBtnText}>
-                  Continue to Career Compass
-                </Text>
-                <Feather name="arrow-right" size={16} color="#fff" />
-              </Pressable>
-            </View>
-          )}
         </ScrollView>
 
-        {!isDone && (
-          <FloatingProfilePanel
-            snapshot={snapshot}
-            onSave={handleManualSave}
-            colors={colors}
-          />
-        )}
+        <FloatingProfilePanel
+          snapshot={snapshot}
+          onSave={handleManualSave}
+          onContinue={handleContinue}
+          colors={colors}
+        />
       </View>
 
       {/* Input area */}
-      {!isDone && (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={topPad}
-        >
-          <View style={[s.inputArea, { paddingBottom: bottomPad + 12 }]}>
-            {editingIndex >= 0 && (
-              <View
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={topPad}
+      >
+        <View style={[s.inputArea, { paddingBottom: bottomPad + 12 }]}>
+          {editingIndex >= 0 && (
+            <View
+              style={[
+                s.editingChip,
+                {
+                  backgroundColor: colors.indigoBg,
+                  borderColor: colors.indigoBorder,
+                },
+              ]}
+            >
+              <Feather name="edit-2" size={11} color={colors.primary} />
+              <Text
                 style={[
-                  s.editingChip,
-                  {
-                    backgroundColor: colors.indigoBg,
-                    borderColor: colors.indigoBorder,
-                  },
+                  s.editingChipText,
+                  { color: colors.primary },
                 ]}
               >
-                <Feather name="edit-2" size={11} color={colors.primary} />
-                <Text
-                  style={[
-                    s.editingChipText,
-                    { color: colors.primary },
-                  ]}
-                >
-                  Editing message
-                </Text>
-                <Pressable onPress={cancelEdit} hitSlop={8}>
-                  <Feather
-                    name="x"
-                    size={13}
-                    color={colors.textMuted}
-                  />
-                </Pressable>
-              </View>
-            )}
-            <View style={s.inputRow}>
+                Editing message
+              </Text>
+              <Pressable onPress={cancelEdit} hitSlop={8}>
+                <Feather
+                  name="x"
+                  size={13}
+                  color={colors.textMuted}
+                />
+              </Pressable>
+            </View>
+          )}
+          <View style={s.inputRow}>
               <TextInput
                 ref={inputRef}
                 value={input}
@@ -1384,7 +1374,7 @@ export default function OnboardingScreen() {
                 returnKeyType="send"
                 onSubmitEditing={handleSend}
                 blurOnSubmit={false}
-                editable={!isThinking && !isDone && !isLoadingFirst}
+                editable={!isThinking && !isLoadingFirst}
                 accessibilityLabel="Chat input"
               />
               {voiceSupported && (
@@ -1436,7 +1426,6 @@ export default function OnboardingScreen() {
             )}
           </View>
         </KeyboardAvoidingView>
-      )}
     </View>
   );
 }
