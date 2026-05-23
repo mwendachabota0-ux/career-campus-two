@@ -23,7 +23,12 @@ import { useColors } from '@/hooks/useColors';
 function getFieldValue(fields: ProfileField[], ...keywords: string[]): string | undefined {
   for (const kw of keywords) {
     const lower = kw.toLowerCase();
-    const match = fields.find(f => f.label.toLowerCase().includes(lower));
+    // Match if label includes the keyword OR if keyword appears in label parts
+    const match = fields.find(f => {
+      const fLower = f.label.toLowerCase();
+      return fLower.includes(lower) || 
+             lower.split(/[\s/]/).some(part => fLower.includes(part));
+    });
     if (match?.value?.trim()) return match.value.trim();
   }
   return undefined;
@@ -285,7 +290,7 @@ export default function ProfileScreen() {
     const newInstitution = getFieldValue(cleaned, 'institution', 'university', 'college') || profile.institution;
     const newYear = getFieldValue(cleaned, 'year of study', 'year') || profile.yearOfStudy;
     const newSkills = getFieldValue(cleaned, 'technical skills', 'skills') || profile.skills;
-    const newCity = getFieldValue(cleaned, 'city', 'location') || profile.city;
+    const newCity = getFieldValue(cleaned, 'city', 'location', 'city/location') ?? profile.city ?? '';
     const newIndustries = getFieldValue(cleaned, 'preferred industries', 'industries') || profile.preferredIndustries;
     const newGoals = getFieldValue(cleaned, 'career goals', 'goals') || profile.careerGoals;
     const newPortfolio = editPortfolio.trim() || getFieldValue(cleaned, 'portfolio') || profile.portfolioUrl;
