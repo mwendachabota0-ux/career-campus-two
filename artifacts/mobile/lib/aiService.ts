@@ -152,9 +152,233 @@ async function invokeAI<T = unknown>(
   });
 }
 
+// ===== TYPE DEFINITIONS =====
+interface TextOnlyResponse {
+  reply: string;
+  model: string;
+  isComplete: boolean;
+  error?: string;
+}
+
+interface HybridResponse {
+  reply?: string;
+  embedding?: number[];
+  text_model?: string;
+  embedding_model?: string;
+  status: 'full' | 'text_only' | 'embedding_only' | 'failed';
+  errors?: Record<string, string>;
+}
+
+interface EmbeddingResponse {
+  embedding: number[];
+  model: string;
+  dimensions: number;
+  error?: string;
+}
+
+interface SimilarityResult {
+  text: string;
+  similarity: number;
+  error: null | string;
+}
+
+interface SimilaritySearchResponse {
+  query: string;
+  query_model: string;
+  results: SimilarityResult[];
+  total_candidates: number;
+  successfully_scored: number;
+  error?: string;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export const aiService = {
+  // ===== NEW HYBRID & EMBEDDING FUNCTIONS =====
+
+  /**
+   * Simple text chat with automatic fallback to gemini-1.5-flash if gemini-2.5-flash fails
+   */
+  chatWithFallback: async (userMessage: string): Promise<TextOnlyResponse> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-service', {
+        body: {
+          action: 'profile-chat',
+          message: userMessage,
+        },
+      });
+
+      if (error) throw new Error(`Edge Function error: ${error.message}`);
+      if (data?.error) throw new Error(data.error);
+
+      console.log('[Career Campus AI] Response received from', data?.model);
+      return {
+        reply: data.reply || '',
+        model: data.model || 'unknown',
+        isComplete: data.isComplete ?? true,
+      };
+    } catch (err: any) {
+      console.error('[Career Campus AI] Error:', err.message);
+      throw err;
+    }
+  },
+
+  /**
+   * Advanced chat that returns both text response AND embeddings
+   * Perfect for getting AI advice while also computing semantic similarity
+   */
+  hybridChat: async (userMessage: string): Promise<HybridResponse> => {
+    try {
+      console.log('[Career Campus AI] Calling hybrid-chat action...');
+      const { data, error } = await supabase.functions.invoke('ai-service', {
+        body: {
+          action: 'hybrid-chat',
+          message: userMessage,
+        },
+      });
+
+      if (error) {
+        console.error('[Career Campus AI] Hybrid chat error:', error.message);
+        return {
+          status: 'failed',
+          errors: { network: error.message },
+        };
+      }
+
+      console.log('[Career Campus AI] Hybrid response status:', data?.status);
+      return (data as HybridResponse) || { status: 'failed', errors: { unknown: 'No data' } };
+    } catch (err: any) {
+      console.error('[Career Campus AI] Hybrid chat exception:', err.message);
+      return {
+        status: 'failed',
+        errors: { exception: err.message },
+      };
+    }
+  },
+
+  /**
+   * Get semantic embedding for text without generating a response
+   * Perfect for pre-computing embeddings for job descriptions or building vector databases
+   */
+  getEmbedding: async (text: string): Promise<EmbeddingResponse> => {
+    try {
+      console.log('[Career Campus AI] Computing embedding...');
+      const { data, error } = await supabase.functions.invoke('ai-service', {
+        body: {
+          action: 'embed',
+          text,
+        },
+      });
+
+      if (error) throw new Error(`Embedding error: ${error.message}`);
+      if (data?.error) throw new Error(data.error);
+
+      console.log('[Career Campus AI] Embedding computed with', data?.model);
+      return {
+        embedding: data.embedding || [],
+        model: data.model || 'unknown',
+        dimensions: data.dimensions || 0,
+      };
+    } catch (err: any) {
+      console.error('[Career Campus AI] Embedding error:', err.message);
+      throw err;
+    }
+  },
+
+  /**
+   * Find the most similar items from a list of candidates using semantic similarity
+   * Uses cosine similarity on embeddings
+   */
+  similaritySearch: async (
+    query: string,
+    candidates: string[]
+  ): Promise<SimilaritySearchResponse> => {
+    try {
+      console.log('[Career Campus AI] Running similarity search...');
+      console.log('[Career Campus AI] Candidates:', candidates.length);
+
+      const { data, error } = await supabase.functions.invoke('ai-service', {
+        body: {
+          action: 'similarity-search',
+          query,
+          candidates,
+        },
+      });
+
+      if (error) throw new Error(`Similarity search error: ${error.message}`);
+      if (data?.error) throw new Error(data.error);
+
+      console.log('[Career Campus AI] Similarity search results:', data?.results?.length);
+      return (data as SimilaritySearchResponse) || {
+        query,
+        query_model: 'unknown',
+        results: [],
+        total_candidates: 0,
+        successfully_scored: 0,
+      };
+    } catch (err: any) {
+      console.error('[Career Campus AI] Similarity search error:', err.message);
+      throw err;
+    }
+  },
+
+  /**
+   * Chat with graceful fallback - handles different failure scenarios
+   */
+  chatWithGracefulFallback: async (userMessage: string) => {
+    try {
+      const response = await aiService.hybridChat(userMessage);
+
+      switch (response.status) {
+        case 'full':
+          return {
+            message: response.reply,
+            hasEmbedding: true,
+            canRecommend: true,
+            icon: '✨',
+          };
+        case 'text_only':
+          return {
+            message: response.reply,
+            hasEmbedding: false,
+            canRecommend: false,
+            icon: '💬',
+            warning: 'Recommendations temporarily unavailable',
+          };
+        case 'embedding_only':
+          return {
+            message:
+              'Sorry, I had trouble generating a response, but I can still find similar content for you.',
+            hasEmbedding: true,
+            canRecommend: true,
+            icon: '🔍',
+            error: response.errors?.text_generation,
+          };
+        case 'failed':
+          return {
+            message:
+              'I apologize, but I encountered an issue. Please check your connection and try again.',
+            hasEmbedding: false,
+            canRecommend: false,
+            icon: '❌',
+            error: Object.entries(response.errors || {})
+              .map(([k, v]) => `${k}: ${v}`)
+              .join('; '),
+          };
+      }
+    } catch (err: any) {
+      return {
+        message: 'An unexpected error occurred. Please try again.',
+        hasEmbedding: false,
+        canRecommend: false,
+        icon: '⚠️',
+        error: err.message,
+      };
+    }
+  },
+
+  // ===== EXISTING FUNCTIONS (BACKWARDS COMPATIBLE) =====
+
   profileChat: (payload: Record<string, unknown>) => {
     const messages = (payload.messages as Array<{ role: string; content: string }> | undefined) ?? [];
     const message =
@@ -205,4 +429,12 @@ export const aiService = {
     contentType: string;
     category: string;
   }) => invokeAI<{ extractedText: string }>('extract-content', payload),
+};
+
+// ===== EXPORT TYPES =====
+export type {
+  TextOnlyResponse,
+  HybridResponse,
+  EmbeddingResponse,
+  SimilaritySearchResponse,
 };
