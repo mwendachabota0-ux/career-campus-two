@@ -1092,10 +1092,6 @@ export default function OnboardingScreen() {
           return merged;
         });
       }
-          }
-          return merged;
-        });
-      }
       
       // Chat continues indefinitely - user clicks "Continue to Career Campus" when ready
     } catch (err: any) {
