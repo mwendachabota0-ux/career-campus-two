@@ -384,13 +384,31 @@ async function handleSimilaritySearch(body: Record<string, unknown>): Promise<Re
 // ===== NETWORKING EVENTS =====
 async function handleNetworkingEvents(body: Record<string, unknown>): Promise<Response> {
   try {
-    const userContext = JSON.stringify(body).slice(0, 2000)
-    if (!userContext?.trim()) return json({ error: 'No data' }, 400)
+    const messages = (body.messages as Array<{ role: string; content: string }>) ?? []
+    const userMessage =
+      (body.message as string | undefined) ??
+      [...messages].reverse().find((m) => m.role === 'user')?.content ??
+      messages[messages.length - 1]?.content ??
+      ''
 
-    const result = await callGeminiWithFallback(
-      'You are Career Compass AI. Suggest 5-10 networking events, conferences, and webinars relevant to the user. Be specific with event names, types, and dates.',
-      userContext
-    )
+    if (!userMessage?.trim()) return json({ error: 'No message' }, 400)
+
+    const systemPrompt = `You are Career Compass AI, a professional career advisor helping users with:
+- Job search strategies and opportunities
+- Interview preparation and tips
+- Resume optimization and review
+- Career guidance and development
+- Networking strategies and tips
+- LinkedIn profile optimization
+- Salary negotiation advice
+- Industry insights and trends
+
+Provide helpful, actionable, and personalized advice tailored to their specific situation.
+Be encouraging and professional.
+
+For networking events requests, suggest 5-10 relevant events, conferences, webinars, or hackathons. Be specific with event names, types, and dates.`
+
+    const result = await callGeminiWithFallback(systemPrompt, userMessage)
 
     return json({ events: result.reply, model: result.model, structured_events: [] })
   } catch (error: any) {
