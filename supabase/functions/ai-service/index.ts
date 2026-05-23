@@ -1218,34 +1218,6 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-// ===== CONFIGURATION =====
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
-const EVENTBRITE_API_KEY = Deno.env.get('EVENTBRITE_API_KEY') ?? ''
-const SERPER_API_KEY = Deno.env.get('SERPER_API_KEY') ?? ''
-const TAVILY_API_KEY = Deno.env.get('TAVILY_API_KEY') ?? ''
-
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  })
-}
-
-// ===== TEXT GENERATION WITH FALLBACK =====
-async function callGeminiWithFallback(
-  systemPrompt: string,
-  userMessage: string,
-  context?: { profile?: StudentProfile; documents?: any[] }
-): Promise<TextResponse> {
-  logger.startTimer('gemini-call')
-  
-  if (!GEMINI_API_KEY) {
     throw new ValidationError('Missing GEMINI_API_KEY secret')
   }
   if (!userMessage?.trim()) {
