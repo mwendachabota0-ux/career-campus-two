@@ -158,6 +158,18 @@ function LettersSection({
     setLoading(true);
     setGeneratedLetter('');
     try {
+      // First research the company to get context for the letter
+      let companyResearch = '';
+      try {
+        const researchData = await aiService.researchCompany({ companyName: company.trim() });
+        if (researchData?.summary) {
+          companyResearch = researchData.summary;
+        }
+      } catch {
+        // Company research is optional — proceed with letter generation without it
+        console.log('Company research unavailable, proceeding with standard letter');
+      }
+
       const data = await aiService.draftLetter({
           companyName: company.trim(),
           role: role.trim(),
@@ -174,6 +186,7 @@ function LettersSection({
           studentEmail: profileEmail,
           studentCity: profile.city || '',
           cvContent: getCvContent(docs),
+          companyResearch, // Pass company research for personalized letter
         });
       setGeneratedLetter(data.letter);
       AsyncStorage.setItem(LETTERS_KEY, JSON.stringify({

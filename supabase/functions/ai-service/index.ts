@@ -18,10 +18,12 @@ const MODELS = {
 }
 
 const API_ENDPOINTS = {
-  gemini: 'https://generativelanguage.googleapis.com/v1/models',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/models',
   eventbrite: 'https://www.eventbriteapi.com/v3/events/search/',
   serper: 'https://google.serper.dev/search',
   tavily: 'https://api.tavily.com/search',
+  predicthq: 'https://api.predicthq.com/v1/events/',
+  locationiq: 'https://us1.locationiq.com/v1/search',
 }
 
 const TIMEOUTS = {
@@ -248,16 +250,29 @@ Mention Zambian-specific context when relevant and use local terminology.`
 }
 
 function normalizeLocation(location: string): string {
-  if (!location) return 'Lusaka, Zambia'
+  if (!location || !location.trim()) return ''
+  const trimmed = location.trim()
+  
+  // If it's just a country name without city, append common city
+  const countryNames = ['zambia', 'zimbabwe', 'botswana', 'malawi', 'tanzania', 'kenya', 'uganda', 'south africa']
+  const isCountryOnly = countryNames.some(c => trimmed.toLowerCase() === c)
+  if (isCountryOnly) {
+    return trimmed.includes('Zambia') || trimmed.toLowerCase() === 'zambia' 
+      ? 'Lusaka, Zambia' 
+      : trimmed
+  }
+  
+  // If location doesn't have a country, add Zambia for context
   const zambianCities = [
     'lusaka', 'kitwe', 'ndola', 'livingstone', 'kabwe', 'chingola',
-    'copperbelt', 'northern province', 'zambia'
+    'copperbelt', 'northern province'
   ]
-  const isZambian = zambianCities.some((city) => location.toLowerCase().includes(city))
-  if (isZambian) {
-    return location.includes('Zambia') ? location : `${location}, Zambia`
+  const isZambian = zambianCities.some((city) => trimmed.toLowerCase().includes(city))
+  if (isZambian && !trimmed.includes(',')) {
+    return `${trimmed}, Zambia`
   }
-  return location
+  
+  return trimmed
 }
 
 // ===== FILE PARSING UTILITIES =====
@@ -341,6 +356,8 @@ const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
 const EVENTBRITE_API_KEY = Deno.env.get('EVENTBRITE_API_KEY') ?? ''
 const SERPER_API_KEY = Deno.env.get('SERPER_API_KEY') ?? ''
 const TAVILY_API_KEY = Deno.env.get('TAVILY_API_KEY') ?? ''
+const PREDICT_HQ_TOKEN = Deno.env.get('PREDICT_HQ_TOKEN') ?? ''
+const LOCATION_IQ_TOKEN = Deno.env.get('LOCATION_IQ_TOKEN') ?? ''
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -1047,6 +1064,7 @@ async function handleDraftLetter(body: any): Promise<Response> {
   const goals = body.goals ?? ''
   const portfolioUrl = body.portfolioUrl ?? ''
   const cvContent = body.cvContent ?? ''
+  const companyResearch = body.companyResearch ?? ''
 
   if (!companyName?.trim()) {
     return json({ error: 'Company name required' }, 400)
@@ -1062,11 +1080,12 @@ async function handleDraftLetter(body: any): Promise<Response> {
 - Goals: ${goals || 'Not provided'}
 - Portfolio: ${portfolioUrl || 'Not provided'}
 ${cvContent ? `\n\nCV:\n${cvContent.slice(0, 2000)}` : ''}
+${companyResearch ? `\n\nCompany Research:\n${companyResearch}\n\nUse this research to show specific understanding of the company in the letter.` : ''}
 
 Write compelling, professional letter that:
 1. Opens with strong introduction
 2. Highlights relevant skills
-3. Shows company understanding
+3. Shows company understanding (use company research specifics if available)
 4. Explains why they're good fit
 5. Includes clear call to action
 
@@ -1088,12 +1107,13 @@ Keep it 300-400 words.`
 }
 
 async function handleDiscoverCompanies(body: any): Promise<Response> {
-  const location = body.location ?? ''
+  // Accept both 'location' and 'locationText' for compatibility
+  const location = (body.location ?? body.locationText ?? '').trim()
   const industry = body.industry ?? ''
   const skills = body.skills ?? ''
   const degree = body.degree ?? ''
 
-  if (!location?.trim()) {
+  if (!location) {
     return json({ error: 'Location is required to search for companies' }, 400)
   }
 
@@ -1140,7 +1160,7 @@ Focus on Zambian companies when possible. Format as JSON array with: {name, indu
 
 async function handleInterviewQuestions(body: any): Promise<Response> {
   const role = body.role ?? ''
-  const company = body.company ?? ''
+  const company = (body.company ?? body.companyName ?? '').trim()
   const skills = body.skills ?? ''
   const experience = body.experience ?? ''
 
@@ -1250,7 +1270,7 @@ Be concise and well-structured. If any section is not applicable, skip it.`
 }
 
 async function handleResearchCompany(body: any): Promise<Response> {
-  const company = body.company ?? ''
+  const company = (body.company ?? body.companyName ?? '').trim()
 
   if (!company?.trim()) {
     return json({ error: 'Company name required' }, 400)
@@ -1484,23 +1504,163 @@ async function fetchTavilyEvents(
   }
 }
 
+// ===== PREDICTHQ + LOCATIONIQ FETCHER =====
+async function geocodeWithLocationIQ(locationName: string): Promise<{ lat: number; lon: number } | null> {
+  if (!LOCATION_IQ_TOKEN) {
+    logger.warn('locationiq', 'No LocationIQ token configured')
+    return null
+  }
+  try {
+    const url = `${API_ENDPOINTS.locationiq}?key=${LOCATION_IQ_TOKEN}&q=${encodeURIComponent(locationName)}&format=json&limit=1`
+    const res = await fetch(url)
+    if (!res.ok) {
+      logger.warn('locationiq', `Geocode failed: ${res.status}`)
+      return null
+    }
+    const data = await res.json() as any
+    if (!Array.isArray(data) || data.length === 0) {
+      logger.warn('locationiq', 'No geocode results')
+      return null
+    }
+    const { lat, lon } = data[0]
+    logger.info('locationiq', `Geocoded "${locationName}" → (${lat}, ${lon})`)
+    return { lat: parseFloat(lat), lon: parseFloat(lon) }
+  } catch (err: any) {
+    logger.error('locationiq', `Error: ${err.message}`)
+    return null
+  }
+}
+
+async function fetchPredicthqEvents(
+  query: string,
+  interests: string
+): Promise<any[]> {
+  logger.startTimer('predicthq')
+
+  if (!PREDICT_HQ_TOKEN) {
+    logger.warn('predicthq', 'No PredictHQ token configured')
+    return []
+  }
+
+  try {
+    // First geocode the location
+    const coords = await geocodeWithLocationIQ(query)
+    if (!coords) {
+      logger.warn('predicthq', 'Could not geocode location, skipping PredictHQ')
+      return []
+    }
+
+    const url = new URL(API_ENDPOINTS.predicthq)
+    url.searchParams.append('category', 'conferences,expos,community,concerts,performing-arts,sports,festivals')
+    url.searchParams.append('within', '50km@' + coords.lat + ',' + coords.lon)
+    if (interests) {
+      url.searchParams.append('q', interests)
+    }
+    url.searchParams.append('sort', 'start')
+    url.searchParams.append('limit', '20')
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${PREDICT_HQ_TOKEN}`,
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!res.ok) {
+      logger.warn('predicthq', `API returned ${res.status}`)
+      return []
+    }
+
+    const data = await res.json() as any
+    const events = (data.results || []).map((e: any, idx: number) => {
+      const startDate = e.start ? e.start.substring(0, 10) : ''
+      const endDate = e.end ? e.end.substring(0, 10) : ''
+      const dateLabel = endDate && endDate !== startDate ? `${startDate} – ${endDate}` : startDate
+      
+      return {
+        id: e.id || `predicthq-${idx}-${Date.now()}`,
+        title: e.title || 'Untitled Event',
+        eventType: mapPredictHqCategory(e.category || 'conferences'),
+        organizer: e.labels?.[0]?.label || e.entities?.[0]?.name || 'Various',
+        dateLabel,
+        dateIso: e.start || '',
+        location: e.location?.[0] || query,
+        description: e.description?.slice(0, 300) || '',
+        url: e.external_id ? `https://predicthq.com/events/${e.id}` : '',
+        source: 'predicthq',
+        isOnline: false,
+        tags: (e.labels || []).map((l: any) => l.label),
+        latitude: e.location?.[1] || coords.lat,
+        longitude: e.location?.[0] || coords.lon,
+        relevance: 0.9,
+      }
+    })
+
+    logger.endTimer('predicthq', 'predicthq-fetch', { count: events.length })
+    return events
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      logger.warn('predicthq', 'Request timed out')
+    } else {
+      logger.error('predicthq', `Error: ${err.message}`)
+    }
+    return []
+  }
+}
+
+function mapPredictHqCategory(phqCategory: string): string {
+  const map: Record<string, string> = {
+    concerts: 'cultural',
+    'performing-arts': 'cultural',
+    festivals: 'cultural',
+    sports: 'sport',
+    conferences: 'conference',
+    expos: 'trade-fair',
+    community: 'community',
+  }
+  return map[phqCategory] || 'conference'
+}
+
 // ===== HANDLERS: NETWORKING EVENTS =====
 async function handleNetworkingEvents(body: any): Promise<Response> {
   try {
-    const { location, interests } = body
-    const city = normalizeLocation(location || 'Lusaka, Zambia')
+    const { location, interests, country, latitude, longitude } = body
+    
+    // Build location context: prefer specific location, fall back to country
+    let searchLocation = ''
+    if (location) {
+      searchLocation = normalizeLocation(location)
+    } else if (country) {
+      searchLocation = normalizeLocation(country)
+    }
+    
+    // If no location provided, use default
+    if (!searchLocation) {
+      searchLocation = 'Zambia'
+    }
 
-    logger.info('networking-events', 'Starting multi-source event search', { city, interests })
+    logger.info('networking-events', 'Starting multi-source event search', { 
+      searchLocation, 
+      interests, 
+      hasProximity: !!(latitude && longitude) 
+    })
 
     // Parallel API calls
-    const [eventbriteEvents, serperEvents, tavilyEvents] = await Promise.all([
-      fetchEventbriteEvents(city, interests || 'career development', EVENTBRITE_API_KEY),
+    const [eventbriteEvents, serperEvents, tavilyEvents, predicthqEvents] = await Promise.all([
+      fetchEventbriteEvents(searchLocation, interests || 'career development', EVENTBRITE_API_KEY),
       fetchSerperEvents(interests || 'networking events', SERPER_API_KEY),
       fetchTavilyEvents(interests || 'professional development', TAVILY_API_KEY),
+      fetchPredicthqEvents(searchLocation, interests || ''),
     ])
 
     // Aggregate
-    const allEvents = [...eventbriteEvents, ...serperEvents, ...tavilyEvents]
+    const allEvents = [...eventbriteEvents, ...serperEvents, ...tavilyEvents, ...predicthqEvents]
     
     // Deduplicate by name similarity
     const uniqueEvents = Array.from(
@@ -1512,8 +1672,21 @@ async function handleNetworkingEvents(body: any): Promise<Response> {
       ).values()
     )
 
-    // Sort by relevance
-    uniqueEvents.sort((a: any, b: any) => (b.relevance || 0) - (a.relevance || 0))
+    // Sort by relevance, and optionally by proximity if coordinates available
+    uniqueEvents.sort((a: any, b: any) => {
+      let scoreA = b.relevance || 0
+      let scoreB = b.relevance || 0
+      
+      // Boost score for events closer to user location if coordinates provided
+      if (latitude && longitude && a.latitude && a.longitude) {
+        const distA = Math.sqrt(Math.pow(a.latitude - latitude, 2) + Math.pow(a.longitude - longitude, 2))
+        const distB = Math.sqrt(Math.pow(b.latitude - latitude, 2) + Math.pow(b.longitude - longitude, 2))
+        scoreA -= distA * 0.01  // Proximity boost
+        scoreB -= distB * 0.01
+      }
+      
+      return scoreA - scoreB
+    })
 
     let topEvents = uniqueEvents.slice(0, 15)
 
@@ -1535,7 +1708,7 @@ For each: name, type, dates, location, why it matters.`
           id: 'gemini-suggestions',
           eventName: 'Gemini AI Suggestions',
           eventType: 'other',
-          location: city,
+          location: searchLocation,
           isOnline: false,
           description: geminiResult.reply.slice(0, 300),
           relevance: 0.6,
@@ -1568,6 +1741,72 @@ For each: name, type, dates, location, why it matters.`
   }
 }
 
+// ===== HANDLERS: JOB MATCHING (Gemini-based, Adzuna-ready) =====
+async function handleJobMatching(body: any): Promise<Response> {
+  try {
+    const { qualifications, interests, location } = body
+
+    if (!qualifications?.trim()) {
+      return json({ error: 'Qualifications are required' }, 400)
+    }
+
+    logger.info('job-matching', 'Starting job matching', { qualifications, interests, location })
+
+    // Use Gemini to find and match jobs based on qualifications
+    const prompt = `You are a career matching assistant for Zambian job seekers.
+
+User Qualifications: ${qualifications}
+${interests ? `Interests: ${interests}` : ''}
+${location ? `Location: ${location}` : 'Location: Zambia'}
+
+Task: Generate a list of 10-15 job opportunities that match these qualifications.
+
+For each job provide:
+1. title - Job title
+2. company - Company name (use realistic Zambian/international companies)
+3. industry - Industry sector
+4. location - Where the job is based
+5. description - 1-2 sentence description of the role
+6. match_score - Score from 1-100 indicating how well qualifications match
+7. key_skills - Array of 3-5 skills the role requires
+8. salary_range - Estimated salary range (optional)
+
+Sort by match_score descending (best matches first).
+
+Return ONLY valid JSON as an array of job objects. Example:
+[{"title": "Software Engineering Intern", "company": "Zamtel", "industry": "Telecom", "location": "Lusaka", "description": "...", "match_score": 85, "key_skills": ["Python", "SQL", "Teamwork"], "salary_range": "ZMW 5,000-8,000/month"}]`
+
+    const result = await callGeminiWithFallback(
+      'You are a career matching assistant. Generate realistic job matches based on qualifications.',
+      prompt
+    )
+
+    let jobs: any[] = []
+    try {
+      const parsed = extractJSON<any[]>(result.reply)
+      if (Array.isArray(parsed)) {
+        jobs = parsed
+      }
+    } catch {
+      logger.warn('job-matching', 'Could not parse job matches as JSON, returning raw text')
+      jobs = []
+    }
+
+    const response = {
+      jobs,
+      totalMatches: jobs.length,
+      model: result.model,
+      rawResponse: jobs.length === 0 ? result.reply : undefined,
+    }
+
+    logger.info('job-matching', 'Jobs matched successfully', { count: response.totalMatches })
+    return json(response, 200)
+  } catch (error: any) {
+    logger.error('job-matching', `Error: ${error.message}`)
+    return json({ error: error?.message || 'Failed to match jobs' }, 500)
+  }
+}
+
 // ===== HEALTH CHECK =====
 async function handleHealthCheck(): Promise<Response> {
   const checks = {
@@ -1575,6 +1814,8 @@ async function handleHealthCheck(): Promise<Response> {
     eventbrite: !!EVENTBRITE_API_KEY,
     serper: !!SERPER_API_KEY,
     tavily: !!TAVILY_API_KEY,
+    predicthq: !!PREDICT_HQ_TOKEN,
+    locationiq: !!LOCATION_IQ_TOKEN,
   }
 
   const allConfigured = Object.values(checks).some((v) => v)
@@ -1639,6 +1880,8 @@ Deno.serve(async (req: Request) => {
         return await handleParseProfileFromCv(body)
       case 'networking-events':
         return await handleNetworkingEvents(body)
+      case 'job-matching':
+        return await handleJobMatching(body)
 
       default:
         throw new ValidationError(`Unknown action: ${action}`)

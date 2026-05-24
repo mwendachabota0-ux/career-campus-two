@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -137,6 +138,41 @@ function isPastEvent(event: NetworkingEvent): boolean {
   return new Date(event.dateIso) < new Date();
 }
 
+async function getLocation(): Promise<{ latitude: number; longitude: number; country?: string }> {
+  try {
+    if (Platform.OS === 'web') {
+      return new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(
+          p => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude }),
+          reject,
+        ),
+      );
+    }
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') throw new Error('Location permission denied');
+    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    
+    // Try to get country from reverse geocoding
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${loc.coords.latitude}&lon=${loc.coords.longitude}&format=json`,
+      { headers: { 'Accept-Language': 'en' } },
+    );
+    let country = 'Zambia';
+    if (res.ok) {
+      const data = await res.json() as { address?: { country?: string } };
+      country = data.address?.country || 'Zambia';
+    }
+    
+    return { 
+      latitude: loc.coords.latitude, 
+      longitude: loc.coords.longitude,
+      country 
+    };
+  } catch {
+    return { latitude: -13.1339, longitude: 27.8493, country: 'Zambia' }; // Default to Lusaka
+  }
+}
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function NetworkScreen() {
@@ -177,12 +213,14 @@ export default function NetworkScreen() {
     else setIsLoading(true);
     setFetchError(null);
     try {
+      // Try to get user's current location and country
+      const locationData = await getLocation();
+      
       const data = await aiService.networkingEvents({
-          city: profile?.city || 'Zambia',
-          degree: profile?.currentDegree || '',
-          skills: profile?.skills || '',
-          preferredIndustries: profile?.preferredIndustries || '',
-          goals: profile?.careerGoals || '',
+          country: locationData.country || profile?.city || 'Zambia',
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+          interests: profile?.preferredIndustries || '',
         });
       const events: NetworkingEvent[] = Array.isArray(data) ? (data as NetworkingEvent[]) : [];
       // Merge with persisted events — never delete previously discovered ones

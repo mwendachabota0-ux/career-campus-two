@@ -14,6 +14,60 @@ function json(data: unknown, status = 200) {
   })
 }
 
+// ===== FIELD MAPPING: camelCase → snake_case =====
+const CASEMAP: Record<string, string> = {
+  displayName: 'display_name',
+  currentDegree: 'current_degree',
+  yearOfStudy: 'year_of_study',
+  preferredIndustries: 'preferred_industries',
+  careerGoals: 'career_goals',
+  portfolioUrl: 'portfolio_url',
+  linkedInUrl: 'linked_in_url',
+  linked_in_url: 'linked_in_url',
+  githubUrl: 'github_url',
+  profileImageUrl: 'profile_image_url',
+  profileCompleteness: 'profile_completeness',
+  profileFields: 'profile_fields',
+  updatedAt: 'updated_at',
+  createdAt: 'created_at',
+  addedDate: 'added_date',
+  updatedDate: 'updated_date',
+  howWeMet: 'how_we_met',
+  isWarmLead: 'is_warm_lead',
+  needsFollowUp: 'needs_follow_up',
+  lastContactDate: 'last_contact_date',
+  companyName: 'company_name',
+  jobTitle: 'job_title',
+  appliedDate: 'applied_date',
+  lastModified: 'last_modified',
+  createdDate: 'created_date',
+  draftedLetter: 'drafted_letter',
+  researchSummary: 'research_summary',
+  interviewQuestions: 'interview_questions',
+  interviewVerdict: 'interview_verdict',
+  fileUrl: 'file_url',
+  fileSize: 'file_size',
+  mimeType: 'mime_type',
+  uploadedAt: 'uploaded_at',
+  extractedText: 'extracted_text',
+  isOnline: 'is_online',
+  isAttending: 'is_attending',
+  reminderSet: 'reminder_set',
+  savedAt: 'saved_at',
+  dateIso: 'date_iso',
+  dateLabel: 'date_label',
+  eventType: 'event_type',
+}
+
+function toSnakeCase(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = CASEMAP[key] ?? key.replace(/([A-Z])/g, '_$1').toLowerCase()
+    result[snakeKey] = value
+  }
+  return result
+}
+
 // ===== PROFILES =====
 async function handleProfiles(req: Request, client: any, userId: string) {
   const method = req.method
@@ -39,9 +93,10 @@ async function handleProfiles(req: Request, client: any, userId: string) {
 
   if (method === 'POST') {
     const body = await req.json()
+    const mapped = toSnakeCase(body)
     const { data, error } = await client
       .from('profiles')
-      .insert({ ...body, user_id: userId })
+      .insert({ ...mapped, user_id: userId })
       .select()
       .single()
     return error ? json({ error: error.message }, 400) : json(data, 201)
@@ -50,9 +105,10 @@ async function handleProfiles(req: Request, client: any, userId: string) {
   if (method === 'PUT') {
     if (!id) return json({ error: 'ID required for update' }, 400)
     const body = await req.json()
+    const mapped = toSnakeCase(body)
     const { data, error } = await client
       .from('profiles')
-      .update({ ...body, updated_at: new Date().toISOString() })
+      .update({ ...mapped, updated_at: new Date().toISOString() })
       .eq('id', id)
       .eq('user_id', userId)
       .select()
