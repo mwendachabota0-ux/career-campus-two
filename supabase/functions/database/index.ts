@@ -153,7 +153,7 @@ async function handleApplications(req: Request, client: any, userId: string) {
       .from('applications')
       .select('*')
       .eq('user_id', userId)
-      .order('created_date', { ascending: false })
+      .order('created_at', { ascending: false })
     return error ? json({ error: error.message }, 400) : json(data)
   }
 
@@ -161,7 +161,7 @@ async function handleApplications(req: Request, client: any, userId: string) {
     const body = await req.json()
     const { data, error } = await client
       .from('applications')
-      .insert({ ...body, user_id: userId, created_date: new Date().toISOString() })
+      .insert({ ...body, user_id: userId, created_at: new Date().toISOString() })
       .select()
       .single()
     return error ? json({ error: error.message }, 400) : json(data, 201)
@@ -172,7 +172,7 @@ async function handleApplications(req: Request, client: any, userId: string) {
     const body = await req.json()
     const { data, error } = await client
       .from('applications')
-      .update({ ...body, last_modified: new Date().toISOString() })
+      .update({ ...body })
       .eq('id', id)
       .eq('user_id', userId)
       .select()
@@ -213,7 +213,7 @@ async function handleContacts(req: Request, client: any, userId: string) {
       .from('contacts')
       .select('*')
       .eq('user_id', userId)
-      .order('added_date', { ascending: false })
+      .order('created_at', { ascending: false })
     return error ? json({ error: error.message }, 400) : json(data)
   }
 
@@ -221,7 +221,7 @@ async function handleContacts(req: Request, client: any, userId: string) {
     const body = await req.json()
     const { data, error } = await client
       .from('contacts')
-      .insert({ ...body, user_id: userId, added_date: new Date().toISOString() })
+      .insert({ ...body, user_id: userId, created_at: new Date().toISOString() })
       .select()
       .single()
     return error ? json({ error: error.message }, 400) : json(data, 201)
@@ -232,7 +232,7 @@ async function handleContacts(req: Request, client: any, userId: string) {
     const body = await req.json()
     const { data, error } = await client
       .from('contacts')
-      .update({ ...body, updated_date: new Date().toISOString() })
+      .update({ ...body })
       .eq('id', id)
       .eq('user_id', userId)
       .select()
@@ -273,7 +273,7 @@ async function handleSavedEvents(req: Request, client: any, userId: string) {
       .from('saved_events')
       .select('*')
       .eq('user_id', userId)
-      .order('saved_at', { ascending: false })
+      .order('created_at', { ascending: false })
     return error ? json({ error: error.message }, 400) : json(data)
   }
 
@@ -281,7 +281,7 @@ async function handleSavedEvents(req: Request, client: any, userId: string) {
     const body = await req.json()
     const { data, error } = await client
       .from('saved_events')
-      .insert({ ...body, user_id: userId, saved_at: new Date().toISOString() })
+      .insert({ ...body, user_id: userId, created_at: new Date().toISOString() })
       .select()
       .single()
     return error ? json({ error: error.message }, 400) : json(data, 201)
