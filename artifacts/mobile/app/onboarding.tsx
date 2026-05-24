@@ -1173,10 +1173,12 @@ export default function OnboardingScreen() {
             paddingHorizontal: 20,
             paddingTop: 16,
             paddingBottom: 20,
+            flexGrow: 1,
           }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           onContentSizeChange={scrollToBottom}
+          scrollEventThrottle={16}
         >
           {/* First-message loading state */}
           {isLoadingFirst && (
@@ -1315,8 +1317,8 @@ export default function OnboardingScreen() {
 
       {/* Input area */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={topPad}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={topPad + (Platform.OS === 'ios' ? 0 : 60)}
       >
         <View style={[s.inputArea, { paddingBottom: bottomPad + 12 }]}>
           {editingIndex >= 0 && (
@@ -1394,7 +1396,7 @@ export default function OnboardingScreen() {
                 onPress={handleSend}
                 disabled={!input.trim() || isThinking || isLoadingFirst}
                 accessibilityLabel="Send message"
-                android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
+                android_ripple={{ color: colors.isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)' }}
               >
                 {isThinking ? (
                   <ActivityIndicator size="small" color={colors.textMuted} />
@@ -1557,7 +1559,7 @@ const styles = (colors: ReturnType<typeof useColors>) =>
       flex: 1,
       minHeight: 44,
       maxHeight: 120,
-      backgroundColor: 'rgba(255,255,255,0.07)',
+      backgroundColor: colors.inputBg,
       borderColor: colors.border,
       borderWidth: 1,
       borderRadius: 22,
@@ -1573,7 +1575,7 @@ const styles = (colors: ReturnType<typeof useColors>) =>
       borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.07)',
+      backgroundColor: colors.inputBg,
       borderWidth: 1,
       borderColor: colors.border,
     },
@@ -1590,7 +1592,7 @@ const styles = (colors: ReturnType<typeof useColors>) =>
       backgroundColor: colors.primary,
     },
     sendBtnDisabled: {
-      backgroundColor: 'rgba(255,255,255,0.07)',
+      backgroundColor: colors.buttonDisabled,
     },
     listeningHint: {
       fontSize: 12,

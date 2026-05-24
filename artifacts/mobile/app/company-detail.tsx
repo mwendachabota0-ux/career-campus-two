@@ -419,7 +419,7 @@ export default function CompanyDetailScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowLetterModal(false)}
       >
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}>
           <View style={[s.modalContainer, { paddingTop: insets.top || 16, paddingBottom: insets.bottom || 16 }]}>
             <View style={s.modalHeader}>
               <Pressable onPress={() => { setShowLetterModal(false); setLetter(''); setLetterError(''); }} style={s.closeBtn}>

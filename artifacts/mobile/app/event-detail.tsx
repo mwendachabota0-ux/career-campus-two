@@ -444,7 +444,7 @@ export default function EventDetailScreen() {
             </ScrollView>
           )}
 
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}>
             <View style={[s.inputRow, { borderTopColor: colors.border }]}>
               <TextInput
                 ref={inputRef}
