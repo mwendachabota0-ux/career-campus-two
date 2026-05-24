@@ -1604,6 +1604,8 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const action = body?.action as string | undefined
 
+    // Log incoming request
+    logger.info('ai-service', `Request received: POST /functions/v1/ai-service`)
     logger.info('ai-service', `Action invoked: ${action}`)
 
     if (!action) {
