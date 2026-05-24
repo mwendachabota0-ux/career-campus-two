@@ -13,7 +13,7 @@ export const MODELS = {
 
 // ===== API ENDPOINTS =====
 export const API_ENDPOINTS = {
-  gemini: 'https://generativelanguage.googleapis.com/v1beta/models',
+  gemini: 'https://generativelanguage.googleapis.com/v1/models',
   eventbrite: 'https://www.eventbriteapi.com/v3/events/search/',
   serper: 'https://google.serper.dev/search',
   tavily: 'https://api.tavily.com/search',
