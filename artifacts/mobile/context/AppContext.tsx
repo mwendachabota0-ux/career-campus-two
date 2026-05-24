@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { profiles, applications, contacts, savedEvents, documents } from '@/lib/database';
 
 export type ApplicationStatus = 'Interested' | 'Applied' | 'Interviewing' | 'Offer' | 'Rejected' | 'Accepted';
 export type ThemeOverride = 'system' | 'light' | 'dark';
@@ -340,18 +341,10 @@ async function getCurrentUserId(): Promise<string | null> {
 
 async function fetchRemoteProfile(uid: string): Promise<UserProfile | null> {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', uid)
-      .limit(1)
-      .maybeSingle();
-    if (error) {
-      console.warn('[AppContext] fetchRemoteProfile failed:', error.message);
-      return null;
-    }
-    if (!data) return null;
-    return mapRemoteProfileRow(data, uid);
+    const data = await profiles.getAll();
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const profileData = data[0];
+    return mapRemoteProfileRow(profileData, uid);
   } catch (err) {
     console.warn('[AppContext] fetchRemoteProfile exception:', err);
     return null;
@@ -364,14 +357,12 @@ async function fetchRemoteRecords<T>(
   mapper: (row: Record<string, any>) => T,
 ): Promise<T[]> {
   try {
-    const { data, error } = await supabase
-      .from(table)
-      .select('*')
-      .eq('user_id', uid);
-    if (error) {
-      console.warn(`[AppContext] fetchRemoteRecords(${table}) failed:`, error.message);
-      return [];
-    }
+    let data: any[] = [];
+    if (table === 'applications') data = await applications.getAll();
+    else if (table === 'contacts') data = await contacts.getAll();
+    else if (table === 'saved_events') data = await savedEvents.getAll();
+    else if (table === 'documents') data = await documents.getAll();
+    
     if (!Array.isArray(data)) return [];
     return data.map(row => mapper(row as Record<string, any>));
   } catch (err) {
@@ -383,9 +374,23 @@ async function fetchRemoteRecords<T>(
 async function upsertRemoteRecords(table: string, rows: Record<string, unknown>[]) {
   if (rows.length === 0) return;
   try {
-    const { error } = await supabase.from(table).upsert(rows, { onConflict: ['id'] });
-    if (error) {
-      console.warn(`[AppContext] upsertRemoteRecords(${table}) failed:`, error.message);
+    for (const row of rows) {
+      if (table === 'applications') {
+        if (row.id) await applications.update(row.id as string, row);
+        else await applications.create(row);
+      } else if (table === 'contacts') {
+        if (row.id) await contacts.update(row.id as string, row);
+        else await contacts.create(row);
+      } else if (table === 'saved_events') {
+        if (row.id) await savedEvents.update(row.id as string, row);
+        else await savedEvents.create(row);
+      } else if (table === 'documents') {
+        if (row.id) await documents.update(row.id as string, row);
+        else await documents.create(row);
+      } else if (table === 'profiles') {
+        if (row.id) await profiles.update(row.id as string, row);
+        else await profiles.create(row);
+      }
     }
   } catch (err) {
     console.warn(`[AppContext] upsertRemoteRecords(${table}) exception:`, err);
@@ -394,14 +399,11 @@ async function upsertRemoteRecords(table: string, rows: Record<string, unknown>[
 
 async function deleteRemoteRecord(table: string, id: string, uid: string) {
   try {
-    const { error } = await supabase
-      .from(table)
-      .delete()
-      .eq('id', id)
-      .eq('user_id', uid);
-    if (error) {
-      console.warn(`[AppContext] deleteRemoteRecord(${table}) failed:`, error.message);
-    }
+    if (table === 'applications') await applications.delete(id);
+    else if (table === 'contacts') await contacts.delete(id);
+    else if (table === 'saved_events') await savedEvents.delete(id);
+    else if (table === 'documents') await documents.delete(id);
+    else if (table === 'profiles') await profiles.delete(id);
   } catch (err) {
     console.warn(`[AppContext] deleteRemoteRecord(${table}) exception:`, err);
   }
