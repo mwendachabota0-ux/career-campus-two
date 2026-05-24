@@ -1,4 +1,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
+import { decodeBase64 } from 'jsr:@std/encoding/base64'
+import { pdfText } from 'jsr:@pdf/pdftext'
+import mammoth from 'npm:mammoth'
 
 // ===== CONSTANTS & CONFIG =====
 const MODELS = {
@@ -253,6 +256,79 @@ function normalizeLocation(location: string): string {
     return location.includes('Zambia') ? location : `${location}, Zambia`
   }
   return location
+}
+
+// ===== FILE PARSING UTILITIES =====
+function isBase64(str: string): boolean {
+  if (!str) return false
+  try {
+    const buf = Buffer.from(str, 'base64')
+    return buf.toString('base64') === str
+  } catch {
+    return false
+  }
+}
+
+async function extractTextFromFile(
+  base64Content: string,
+  contentType: string
+): Promise<string> {
+  try {
+    // Decode base64 to bytes
+    const fileBytes = decodeBase64(base64Content)
+
+    logger.info('file-parsing', 'Starting extraction', { contentType, size: fileBytes.length })
+
+    // PDF files
+    if (contentType === 'application/pdf') {
+      try {
+        const pages = await pdfText(fileBytes)
+        const text = pages.join('\n\n')
+        logger.info('file-parsing', 'PDF extracted', { pages: pages.length, size: text.length })
+        return text
+      } catch (err: any) {
+        logger.warn('file-parsing', `PDF parsing failed: ${err.message}`)
+        return ''
+      }
+    }
+
+    // Word documents
+    if (contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        contentType.includes('wordprocessingml')) {
+      try {
+        const result = await mammoth.extractRawText({ arrayBuffer: fileBytes.buffer })
+        logger.info('file-parsing', 'DOCX extracted', { size: result.value?.length || 0 })
+        return result.value || ''
+      } catch (err: any) {
+        logger.warn('file-parsing', `DOCX parsing failed: ${err.message}`)
+        return ''
+      }
+    }
+
+    // Plain text files
+    if (contentType.startsWith('text/')) {
+      try {
+        const text = new TextDecoder().decode(fileBytes)
+        logger.info('file-parsing', 'Text extracted', { size: text.length })
+        return text
+      } catch (err: any) {
+        logger.warn('file-parsing', `Text decoding failed: ${err.message}`)
+        return ''
+      }
+    }
+
+    // Images - would need vision API, fallback to empty
+    if (contentType.startsWith('image/')) {
+      logger.info('file-parsing', 'Image detected - will use Gemini vision API')
+      return `[Image file: ${contentType}]`
+    }
+
+    logger.warn('file-parsing', `Unsupported file type: ${contentType}`)
+    return ''
+  } catch (err: any) {
+    logger.error('file-parsing', `Extraction failed: ${err.message}`)
+    return ''
+  }
 }
 
 // ===== CONFIGURATION =====
@@ -1036,32 +1112,51 @@ Format as JSON: {
 async function handleExtractContent(body: any): Promise<Response> {
   const fileContent = body.fileContent ?? ''
   const category = body.category ?? 'Other'
+  const contentType = body.contentType ?? 'text/plain'
 
   if (!fileContent?.trim()) {
     return json({ error: 'No file content provided' }, 400)
   }
 
-  const prompt = `Extract and summarize key information from this ${category}:
+  try {
+    let textContent = fileContent
 
-${fileContent.slice(0, 5000)}
+    // Check if content is base64-encoded (from mobile app file upload)
+    if (isBase64(fileContent)) {
+      logger.info('extract-content', 'Detected base64 content, decoding file', { contentType })
+      textContent = await extractTextFromFile(fileContent, contentType)
+
+      if (!textContent?.trim()) {
+        return json({
+          error: 'Could not extract text from file. Please try a different file format.',
+          extractedText: '',
+        }, 400)
+      }
+    }
+
+    // Summarize the extracted text
+    const prompt = `Extract and summarize key information from this ${category}:
+
+${textContent.slice(0, 5000)}
 
 Provide:
-1. Main content summary
-2. Key skills/qualifications
-3. Key achievements
-4. Dates/periods
-5. Contact information
+1. Main content summary (2-3 sentences)
+2. Key skills/qualifications (if applicable)
+3. Key achievements or points (if applicable)
+4. Important dates/periods (if applicable)
+5. Contact information (if applicable)
 
-Be concise and structured.`
+Be concise and well-structured. If any section is not applicable, skip it.`
 
-  try {
     const result = await callGeminiWithFallback(
-      'You are a document analysis expert. Extract and summarize key information.',
+      'You are a document analysis expert. Extract and summarize key information from documents.',
       prompt
     )
+
     return json({
       extractedText: result.reply,
       model: result.model,
+      rawText: textContent.slice(0, 2000), // Include first 2000 chars for reference
     })
   } catch (error: any) {
     logger.error('extract-content', `Error: ${error.message}`)
