@@ -262,8 +262,11 @@ function normalizeLocation(location: string): string {
 function isBase64(str: string): boolean {
   if (!str) return false
   try {
-    const buf = Buffer.from(str, 'base64')
-    return buf.toString('base64') === str
+    // Use Web API atob() - works in Deno
+    atob(str)
+    // Try to decode with our base64 decoder - should succeed for valid base64
+    decodeBase64(str)
+    return true
   } catch {
     return false
   }
