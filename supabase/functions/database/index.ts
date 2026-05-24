@@ -345,7 +345,19 @@ Deno.serve(async (req: Request) => {
 
     const userId = userData.user.id
     const url = new URL(req.url)
-    const resource = url.searchParams.get('resource') || url.pathname.split('/').pop()
+    const resource = url.searchParams.get('resource')
+
+    // Require resource parameter
+    if (!resource) {
+      return json(
+        {
+          error: 'Missing ?resource= parameter',
+          available: ['profiles', 'documents', 'applications', 'contacts', 'saved_events'],
+          example: '?resource=profiles',
+        },
+        400
+      )
+    }
 
     // Route to appropriate handler
     switch (resource) {
