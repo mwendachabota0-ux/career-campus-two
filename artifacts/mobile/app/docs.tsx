@@ -105,6 +105,7 @@ export default function DocsScreen() {
   const [uploadingCategory, setUploadingCategory] = useState<DocCategory>('CV / Resume');
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [pendingFile, setPendingFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 72 : insets.bottom + 56;
@@ -123,70 +124,55 @@ export default function DocsScreen() {
       const asset = result.assets[0];
       setPendingFile(asset);
       setShowCategoryPicker(true);
-    } catch {
+    } catch (err) {
+      console.warn('Document picker error:', err);
       Alert.alert('Error', 'Failed to pick file. Please try again.');
     }
   };
 
-  const handleUpload = async (category: DocCategory) => {
-    if (!pendingFile) return;
-    setShowCategoryPicker(false);
-    setUploading(true);
-    setUploadingCategory(category);
-
-    try {
-      const asset = pendingFile;
-
-      await ensureDocsDir();
-
-      const ext = asset.name.split('.').pop()?.toLowerCase() || 'bin';
-      const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      let localUri = DOCS_DIR ? `${DOCS_DIR}${uniqueName}` : asset.uri;
-
-      if (DOCS_DIR && asset.uri !== localUri) {
+  // Deferred extraction and processing to avoid blocking the UI thread
+  const deferredExtractAndProcess = React.useCallback(
+    (docId: string, sourceUri: string, mimeType: string, category: DocCategory) => {
+      // Use setTimeout with 0 to defer to next event loop
+      setTimeout(async () => {
         try {
-          await FileSystem.copyAsync({ from: asset.uri, to: localUri });
-        } catch (copyErr) {
-          console.warn('File copy failed, falling back to asset URI:', copyErr);
-          // Fallback: use asset URI directly if copy fails
-          localUri = asset.uri;
-        }
-      }
-
-      const stored = await addDoc({
-        name: asset.name,
-        category,
-        objectPath: localUri,
-        contentType: asset.mimeType ?? 'application/octet-stream',
-        size: asset.size ?? 0,
-      });
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Saved!', `"${asset.name}" added to your document library.`);
-
-      // Extract text from the document (works on both native and web)
-      const sourceUri = DOCS_DIR ? localUri : asset.uri;
-      readAsBase64(sourceUri)
-        .then(async base64 => {
-          return aiService.extractContent({
+          setProcessingId(docId);
+          
+          // Convert to base64 - this is deferred so UI thread is not blocked
+          const base64 = await readAsBase64(sourceUri);
+          
+          // Call extraction API
+          const data = await aiService.extractContent({
             fileContent: base64,
-            contentType: asset.mimeType ?? 'application/octet-stream',
+            contentType: mimeType,
             category,
           }).catch(() => null);
-        })
-        .then(async data => {
-          if (!data?.extractedText) return;
-          await updateDoc(stored.id, { extractedText: data.extractedText });
 
+          if (!data?.extractedText) {
+            setProcessingId(null);
+            return;
+          }
+
+          // Update document with extracted text
+          await updateDoc(docId, { extractedText: data.extractedText });
+
+          // If CV, parse and update profile
           if (category === 'CV / Resume' && profile) {
             try {
-              const parsed = await aiService.parseProfileFromCv({ cvContent: data.extractedText });
+              const parsed = await aiService.parseProfileFromCv({ 
+                cvContent: data.extractedText 
+              });
 
               const mergedFields = [...(profile.profileFields ?? [])];
               const existingLabels = new Set(mergedFields.map(f => f.label.toLowerCase()));
+              
               for (const pf of ((parsed.profileFields as Array<{ label: string; value: string }>) ?? [])) {
                 if (pf.label?.trim() && pf.value?.trim() && !existingLabels.has(pf.label.toLowerCase())) {
-                  mergedFields.push({ id: `cv_${Date.now()}_${mergedFields.length}`, label: pf.label.trim(), value: pf.value.trim() });
+                  mergedFields.push({ 
+                    id: `cv_${Date.now()}_${mergedFields.length}`, 
+                    label: pf.label.trim(), 
+                    value: pf.value.trim() 
+                  });
                 }
               }
 
@@ -212,17 +198,68 @@ export default function DocsScreen() {
                 parsed.city && 'City',
                 parsed.careerGoals && 'Career goals',
               ].filter(Boolean);
+              
               if (filled.length > 0) {
                 Alert.alert(
                   'Profile auto-filled from CV',
                   `Your profile was updated with: ${filled.join(', ')}.`,
                 );
               }
-            } catch {}
+            } catch (err) {
+              console.warn('Profile parsing error:', err);
+            }
           }
-        })
-        .catch(() => {});
+        } catch (err) {
+          console.warn('Document extraction error:', err);
+        } finally {
+          setProcessingId(null);
+        }
+      }, 100); // Small delay to ensure UI thread is responsive
+    },
+    [profile, updateDoc, updateProfile]
+  );
+
+  const handleUpload = async (category: DocCategory) => {
+    if (!pendingFile) return;
+    setShowCategoryPicker(false);
+    setUploading(true);
+    setUploadingCategory(category);
+
+    try {
+      const asset = pendingFile;
+
+      await ensureDocsDir();
+
+      const ext = asset.name.split('.').pop()?.toLowerCase() || 'bin';
+      const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      let localUri = DOCS_DIR ? `${DOCS_DIR}${uniqueName}` : asset.uri;
+
+      if (DOCS_DIR && asset.uri !== localUri) {
+        try {
+          await FileSystem.copyAsync({ from: asset.uri, to: localUri });
+        } catch (copyErr) {
+          console.warn('File copy failed, falling back to asset URI:', copyErr);
+          localUri = asset.uri;
+        }
+      }
+
+      const stored = await addDoc({
+        name: asset.name,
+        category,
+        objectPath: localUri,
+        contentType: asset.mimeType ?? 'application/octet-stream',
+        size: asset.size ?? 0,
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved!', `"${asset.name}" added to your document library.`);
+
+      // Defer extraction to background - don't block UI
+      const sourceUri = DOCS_DIR ? localUri : asset.uri;
+      deferredExtractAndProcess(stored.id, sourceUri, asset.mimeType ?? 'application/octet-stream', category);
+      
     } catch (err: any) {
+      console.error('Upload error:', err);
       Alert.alert('Save Failed', err?.message ?? 'Something went wrong. Please try again.');
     } finally {
       setUploading(false);

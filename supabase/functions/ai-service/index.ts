@@ -1,6 +1,6 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { decodeBase64 } from 'jsr:@std/encoding/base64'
-import { pdfText } from 'jsr:@pdf/pdftext'
+import pdfParse from 'npm:pdf-parse'
 import mammoth from 'npm:mammoth'
 
 // ===== CONSTANTS & CONFIG =====
@@ -285,9 +285,9 @@ async function extractTextFromFile(
     // PDF files
     if (contentType === 'application/pdf') {
       try {
-        const pages = await pdfText(fileBytes)
-        const text = pages.join('\n\n')
-        logger.info('file-parsing', 'PDF extracted', { pages: pages.length, size: text.length })
+        const pdfData = await pdfParse(fileBytes)
+        const text = pdfData.text || ''
+        logger.info('file-parsing', 'PDF extracted', { pages: pdfData.numpages, size: text.length })
         return text
       } catch (err: any) {
         logger.warn('file-parsing', `PDF parsing failed: ${err.message}`)
