@@ -1,7 +1,9 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { decodeBase64 } from 'jsr:@std/encoding/base64'
-import pdfParse from 'npm:pdf-parse'
+import * as pdfParseMod from 'npm:pdf-parse@1.1.1'
 import mammoth from 'npm:mammoth'
+
+const pdfParse = (pdfParseMod as any).default ?? pdfParseMod
 
 // ===== CONSTANTS & CONFIG =====
 const MODELS = {
