@@ -503,34 +503,74 @@ async function getEmbeddingWithFallback(text: string): Promise<{ embedding: numb
 // ===== HANDLERS: PROFILE CHAT =====
 async function handleProfileChat(body: any): Promise<Response> {
   try {
-    const messages = body.messages ?? []
-    const existingProfile = body.existingProfile ?? {}
-    const cvContent = body.cvContent ?? ''
+    // ===== STRICT INPUT VALIDATION =====
+    const messages = Array.isArray(body.messages) ? body.messages : []
+    const userMessage = (body.message ?? (messages[messages.length - 1]?.content ?? '')).toString().trim()
+    
+    if (!userMessage) {
+      return json({ error: 'No user message provided' }, 400)
+    }
 
-    const userMessage =
-      body.message ??
-      [...messages].reverse().find((m: any) => m.role === 'user')?.content ??
-      messages[messages.length - 1]?.content ??
-      ''
+    if (userMessage.length > 5000) {
+      return json({ error: 'Message too long (max 5000 characters)' }, 400)
+    }
 
-    if (!userMessage?.trim()) {
-      throw new ValidationError('No user message provided')
+    // Safely parse existing profile
+    let existingProfile: Record<string, any> = {}
+    try {
+      if (body.existingProfile && typeof body.existingProfile === 'object') {
+        existingProfile = {
+          displayName: body.existingProfile.displayName?.toString() || '',
+          email: body.existingProfile.email?.toString() || '',
+          currentDegree: body.existingProfile.currentDegree?.toString() || '',
+          institution: body.existingProfile.institution?.toString() || '',
+          yearOfStudy: body.existingProfile.yearOfStudy?.toString() || '',
+          city: body.existingProfile.city?.toString() || '',
+          careerGoals: body.existingProfile.careerGoals?.toString() || '',
+          preferredIndustries: Array.isArray(body.existingProfile.preferredIndustries)
+            ? body.existingProfile.preferredIndustries.map((i: any) => i?.toString()).filter(Boolean)
+            : [],
+        }
+      }
+    } catch (err: any) {
+      logger.warn('profile-chat', `Error parsing profile: ${err.message}`)
+      existingProfile = {}
+    }
+
+    // Safely truncate CV content to prevent token limit issues
+    let cvContent = ''
+    try {
+      if (body.cvContent && typeof body.cvContent === 'string') {
+        cvContent = body.cvContent.trim().slice(0, 1500) // Reduced from 2000
+      }
+    } catch (err: any) {
+      logger.warn('profile-chat', `Error processing CV content: ${err.message}`)
+      cvContent = ''
     }
 
     const exchangeCount = Math.floor(messages.length / 2) + 1
-    const hasCv = !!cvContent?.trim()
-    const hasPartialProfile = Object.keys(existingProfile).length > 0
+    const hasCv = !!cvContent
+    const hasPartialProfile = Object.keys(existingProfile).some((k) => existingProfile[k])
     const hasName = !!existingProfile.displayName
 
+    // ===== BUILD SYSTEM PROMPT =====
     let openingStrategy = ''
-    if (hasCv && exchangeCount === 1) {
-      openingStrategy = `CV UPLOADED: Read this CV carefully, then greet warmly and mention something specific you learned from it. Ask ONE follow-up question about something missing or to dig deeper.`
-    } else if (hasPartialProfile && exchangeCount === 1) {
-      openingStrategy = `PARTIAL PROFILE EXISTS: You already know their name "${existingProfile.displayName}", degree "${existingProfile.currentDegree}", and institution "${existingProfile.institution}". Skip these topics. Greet warmly by name and ask ONE focused question about the most important missing info.`
-    } else if (exchangeCount === 1) {
-      openingStrategy = `NEW CONVERSATION: Introduce yourself warmly and ask for their full name as the first question.`
-    } else {
-      openingStrategy = `CONTINUE CONVERSATION: Exchange #${exchangeCount}. Keep deepening the conversation. Ask ONE follow-up question that builds directly on their last answer.`
+    try {
+      if (hasCv && exchangeCount === 1) {
+        openingStrategy = `CV UPLOADED: Read this CV carefully, then greet warmly and mention something specific you learned from it. Ask ONE follow-up question about something missing or to dig deeper.`
+      } else if (hasPartialProfile && exchangeCount === 1) {
+        const safeName = (existingProfile.displayName ?? 'there').toString().slice(0, 50)
+        const safeDegree = (existingProfile.currentDegree ?? '').toString().slice(0, 50)
+        const safeInstitution = (existingProfile.institution ?? '').toString().slice(0, 50)
+        openingStrategy = `PARTIAL PROFILE EXISTS: You already know their name "${safeName}"${safeDegree ? `, degree "${safeDegree}"` : ''}${safeInstitution ? `, institution "${safeInstitution}"` : ''}. Skip these topics. Greet warmly and ask ONE focused question about important missing info.`
+      } else if (exchangeCount === 1) {
+        openingStrategy = `NEW CONVERSATION: Introduce yourself warmly and ask for their full name as the first question.`
+      } else {
+        openingStrategy = `CONTINUE CONVERSATION: Exchange #${exchangeCount}. Keep deepening the conversation. Ask ONE follow-up question that builds directly on their last answer.`
+      }
+    } catch (err: any) {
+      logger.warn('profile-chat', `Error building strategy: ${err.message}`)
+      openingStrategy = 'CONTINUE CONVERSATION: Keep asking follow-up questions.'
     }
 
     const systemPrompt = `You are Career Compass AI, a warm, deeply curious career advisor building comprehensive student profiles.
@@ -542,66 +582,106 @@ OPENING STRATEGY FOR THIS EXCHANGE:
 ${openingStrategy}
 
 CRITICAL CONVERSATION RULES (FOLLOW THESE STRICTLY):
-
 1. ONE QUESTION PER TURN - Never ask multiple questions.
-
 2. NEVER NUMBER QUESTIONS - Don't write "1) Question? 2) Question?" - that's robotic. Write naturally.
-
 3. BUILD ON THEIR ANSWERS - Always reference what they just said.
-
 4. DEEP FOLLOW-UPS - If they give short answers, dig deeper.
-
 5. WARM AND ENCOURAGING - Sound human. Use their name naturally. Show genuine interest.
-
 6. EXTRACT SPECIFIC DETAILS - When they mention a skill, ask for proof of it.
-
 7. NEVER WRAP UP EARLY - Keep going indefinitely. The profile is never "complete" until the user explicitly says so.
-
 8. USE ZAMBIAN CONTEXT - Know about UNZA, CBU, EIZ, ZICA, ICTAZ, TEVETA.
-
 9. ASK ABOUT EVERYTHING - Dig into: name, degree, institution, year, city, skills, projects, work experience, languages, extracurriculars, awards, goals, passions.
-
 10. LISTEN AND REMEMBER - Reference specific things they've told you earlier.
 
 RESPONSE FORMAT:
 Write your warm, conversational message normally. At the END, add:
+PARTIAL_PROFILE: { "displayName": "name if mentioned", "currentDegree": "degree if mentioned", "institution": "...", "city": "...", "careerGoals": "..." }
 
-PARTIAL_PROFILE: { "displayName": "name if mentioned", "currentDegree": "degree if mentioned", ... other fields }
+If conversation is very deep (18+ exchanges), add:
+PROFILE_COMPLETE: { "displayName": "...", "email": "...", "currentDegree": "...", "institution": "...", "city": "...", "careerGoals": "...", "preferredIndustries": [...], "phone": "..." }
 
-If conversation is deep enough (usually 18-26 exchanges), ALSO add:
-PROFILE_COMPLETE: { "displayName": "...", "email": "...", ... ALL fields }
+Default to PARTIAL_PROFILE. Keep conversations going.${
+      hasCv
+        ? `\n\nCV SUMMARY (for context only):\n${cvContent}\n\nDo NOT ask questions the CV already answers. Instead, ask for deeper context or clarification.`
+        : ''
+    }${
+      hasPartialProfile
+        ? `\n\nEXISTING PROFILE DATA:\n${buildStudentProfileString(existingProfile)}\n\nDo NOT re-ask fields they've already provided. Build on what you know.`
+        : ''
+    }`
 
-Default to PARTIAL_PROFILE. Keep conversations going.
+    // ===== CALL GEMINI API =====
+    let result: { reply: string; model: string; isComplete: boolean }
+    try {
+      result = await callGeminiWithFallback(systemPrompt, userMessage, {
+        profile: existingProfile,
+        documents: cvContent ? [{ name: 'CV', extractedText: cvContent }] : undefined,
+      })
+    } catch (apiError: any) {
+      logger.error('profile-chat', `Gemini API error: ${apiError.message}`)
+      // Return more helpful error messages for API issues
+      if (apiError.message?.includes('quota') || apiError.message?.includes('high demand')) {
+        return json(
+          { error: 'AI service temporarily busy. Please try again in a moment.' },
+          503
+        )
+      }
+      throw apiError
+    }
 
-${hasCv ? `\n\nCV CONTENT:\n${cvContent.slice(0, 2000)}\n\nDo NOT ask questions the CV already answers. Instead, ask for deeper context.` : ''}
+    // ===== EXTRACT PROFILE DATA =====
+    let cleanedReply = result.reply
+    let completeProfile = null
+    try {
+      const extracted = extractProfileComplete(result.reply)
+      cleanedReply = extracted.reply
+      completeProfile = extracted.profile
+    } catch (err: any) {
+      logger.warn('profile-chat', `Error extracting complete profile: ${err.message}`)
+    }
 
-${hasPartialProfile ? `\n\nKNOWN PROFILE:\n${buildStudentProfileString(existingProfile)}\n\nDo NOT re-ask these fields. Build on them.` : ''}`
-
-    const result = await callGeminiWithFallback(systemPrompt, userMessage, {
-      profile: existingProfile,
-      documents: cvContent ? [{ name: 'CV', extractedText: cvContent }] : undefined,
-    })
-
-    const { reply: cleanedReply, profile: completeProfile } = extractProfileComplete(result.reply)
-    const partialProfile = extractPartialProfile(result.reply) || extractProfileFields(cleanedReply)
+    let partialProfile: Record<string, any> = {}
+    try {
+      partialProfile =
+        extractPartialProfile(result.reply) ||
+        extractProfileFields(cleanedReply) ||
+        {}
+    } catch (err: any) {
+      logger.warn('profile-chat', `Error extracting partial profile: ${err.message}`)
+    }
 
     const response = {
       reply: cleanMarkdown(cleanedReply),
       isComplete: !!completeProfile,
       model: result.model,
-      profileData: completeProfile || existingProfile,
-      partialProfile,
+      profileData: completeProfile || existingProfile || {},
+      partialProfile: partialProfile || {},
     }
 
-    logger.info('profile-chat', 'Response generated', {
+    logger.info('profile-chat', 'Response generated successfully', {
       exchange: exchangeCount,
       isComplete: response.isComplete,
+      hasCv,
+      hasProfile: hasPartialProfile,
     })
 
     return json(response, 200)
   } catch (error: any) {
-    logger.error('profile-chat', `Error: ${error.message}`)
-    return json({ error: error?.message || 'Failed to generate response' }, 500)
+    const errorMessage = error?.message || 'Failed to generate response'
+    const statusCode = error?.statusCode || 500
+
+    logger.error('profile-chat', errorMessage, {
+      code: error?.code,
+      details: error?.details,
+    })
+
+    return json(
+      {
+        error: errorMessage,
+        code: error?.code,
+      },
+      statusCode
+    )
   }
 }
 
