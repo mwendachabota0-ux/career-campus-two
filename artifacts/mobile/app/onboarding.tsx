@@ -1318,7 +1318,7 @@ export default function OnboardingScreen() {
       {/* Input area */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={topPad + (Platform.OS === 'ios' ? 0 : 60)}
+        keyboardVerticalOffset={topPad}
       >
         <View style={[s.inputArea, { paddingBottom: bottomPad + 12 }]}>
           {editingIndex >= 0 && (

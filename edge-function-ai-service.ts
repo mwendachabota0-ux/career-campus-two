@@ -17,7 +17,7 @@ function json(data: unknown, status = 200) {
 // Models - Primary and Fallback
 const GENERATION_MODELS = {
   primary: 'gemini-2.5-flash',
-  fallback: 'gemini-1.5-flash', // Will try if 2.5 fails
+  fallback: 'gemini-2.5-flash', // Will try if 2.5 fails
 }
 
 const EMBEDDING_MODELS = {

@@ -197,7 +197,7 @@ export const aiService = {
   // ===== NEW HYBRID & EMBEDDING FUNCTIONS =====
 
   /**
-   * Simple text chat with automatic fallback to gemini-1.5-flash if gemini-2.5-flash fails
+   * Simple text chat with automatic fallback to gemini-2.5-flash if primary fails
    */
   chatWithFallback: async (userMessage: string): Promise<TextOnlyResponse> => {
     try {

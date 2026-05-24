@@ -7,7 +7,7 @@ import mammoth from 'npm:mammoth'
 const MODELS = {
   generation: {
     primary: 'gemini-2.5-flash',
-    fallback: 'gemini-1.5-flash',
+    fallback: 'gemini-2.5-flash',
   },
   embedding: {
     primary: 'gemini-embedding-001',

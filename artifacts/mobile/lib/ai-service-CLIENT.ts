@@ -96,7 +96,7 @@ interface SimilaritySearchResponse {
 
 // ===== 1. TEXT-ONLY CHAT (Traditional, backwards compatible) =====
 /**
- * Simple text chat with automatic fallback to gemini-1.5-flash if gemini-2.5-flash fails
+ * Simple text chat with automatic fallback to gemini-2.5-flash if primary fails
  * 
  * Usage:
  * const response = await chatWithFallback('Hello, help me with my resume');
