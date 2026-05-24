@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-
-const SUPABASE_URL = 'https://pwphrlbpwxytswdaglem.supabase.co';
+// Mobile app build triggeredconst SUPABASE_URL = 'https://pwphrlbpwxytswdaglem.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3cGhybGJwd3h5dHN3ZGFnbGVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMDg5MjQsImV4cCI6MjA5NDU4NDkyNH0.c4XSqAU8tDvAi8_9n2OuqPR0j2Ptjo_yMOOTDikhqrc';
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/ai-service`;
 
