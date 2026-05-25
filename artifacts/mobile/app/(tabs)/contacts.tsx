@@ -212,7 +212,8 @@ export default function NetworkScreen() {
 
   // ── Fetch events ────────────────────────────────────────────────────────────
 
-  const fetchEvents = useCallback(async (refreshing = false) => {\n    if (refreshing) setIsRefreshing(true);
+  const fetchEvents = useCallback(async (refreshing = false) => {
+    if (refreshing) setIsRefreshing(true);
     else setIsLoading(true);
     setFetchError(null);
     try {
